@@ -23,19 +23,23 @@ function WarningIcon() {
   );
 }
 
-function asParagraphs(value: string | string[] | undefined) {
+function asParagraphs(value: any): string[] {
   if (Array.isArray(value)) {
-    return value;
+    return value.map(String);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/\n+/)
+      .map((item) => item.replace(/^\d+[).]\s*/, "").trim())
+      .filter(Boolean);
   }
 
   if (!value) {
     return [];
   }
 
-  return value
-    .split(/\n+/)
-    .map((item) => item.replace(/^\d+[).]\s*/, "").trim())
-    .filter(Boolean);
+  return [String(value)];
 }
 
 export function TeachingCard({
