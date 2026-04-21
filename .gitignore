@@ -148,7 +148,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-backend/rag/index/
+# backend/rag/index/
 myenv/
 
 settings.json
