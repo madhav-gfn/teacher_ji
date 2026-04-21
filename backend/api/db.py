@@ -86,7 +86,7 @@ async def init_postgres() -> None:
     # asyncpg doesn't parse sslmode from the DSN — strip it and pass ssl explicitly
     ssl: str | bool = False
     if "sslmode=require" in dsn:
-        dsn = dsn.replace("?sslmode=require", "").replace("&sslmode=require", "")
+        dsn = dsn.replace("?sslmode=require&", "?").replace("?sslmode=require", "").replace("&sslmode=require", "")
         ssl = True
     pg_pool = await asyncpg.create_pool(dsn=dsn, min_size=2, max_size=10, ssl=ssl)
     async with pg_pool.acquire() as conn:
