@@ -1,13 +1,29 @@
-# NCERT Learning Platform
+# 🎓 TeacherJi: AI-Powered NCERT Learning Platform
 
-This project is an NCERT-grounded learning system for school subjects. It currently contains two major pieces:
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)
+![React](https://img.shields.io/badge/React-18+-61DAFB.svg)
+![LangGraph](https://img.shields.io/badge/LangGraph-AI-orange.svg)
+![Groq](https://img.shields.io/badge/LLM-Groq_Llama_3-black.svg)
 
-1. A RAG layer for retrieving chapter-specific NCERT content.
-2. A LangGraph multi-agent orchestration layer for teaching, quizzing, and feedback.
+**TeacherJi** is an intelligent, personalized, and interactive learning system designed for students. By combining **Retrieval-Augmented Generation (RAG)** over official NCERT textbooks with a **Multi-Agent LangGraph Orchestrator**, TeacherJi provides grounded, hallucination-free tutoring, dynamic quiz generation, and personalized feedback.
 
-## System Visualization
+---
 
-### Overall Architecture
+## ✨ Key Features
+
+- 🧠 **Multi-Agent Architecture:** Specialized, autonomous AI agents for Math, Science, and Social Studies (SST).
+- 📚 **100% NCERT Grounded:** Uses FAISS vector search to retrieve exact paragraphs from textbooks, ensuring answers are strictly curriculum-aligned.
+- 📝 **Dynamic Quizzing & Feedback:** Generates contextual questions on the fly, evaluates student answers, and tracks weak topics for future revision.
+- ⚡ **High Performance:** Built on an asynchronous **FastAPI** backend with **PostgreSQL** for persistent profiles and **Redis** for lightning-fast session state.
+- 🎨 **Interactive UI:** A highly responsive, animated frontend that guides students through a continuous learning loop.
+
+---
+
+## 🏗️ Architecture & Workflows
+
+### 1. Overall System Architecture
+TeacherJi uses a modular architecture separating the stateful graph orchestrator from the stateless LLM and vector stores.
 
 ```mermaid
 flowchart LR
@@ -23,7 +39,7 @@ flowchart LR
     E --> H
     F --> H
 
-    H --> I[FAISS Index + NCERT Metadata]
+    H --> I[(FAISS Index + Metadata)]
     C --> J[Groq LLM API]
     D --> J
     E --> J
@@ -35,316 +51,121 @@ flowchart LR
     L --> B
 ```
 
-### Agent Graph Routing
-
-```mermaid
-flowchart TD
-    START([START]) --> O[orchestrator]
-    O -->|subject=math, mode=teaching| M[math_agent]
-    O -->|subject=science, mode=teaching| S[science_agent]
-    O -->|subject=sst, mode=teaching| T[sst_agent]
-    O -->|mode=quiz| Q[quiz_generator]
-    O -->|mode=feedback| F[feedback_agent]
-    O -->|mode=complete| END([END])
-
-    M --> O
-    S --> O
-    T --> O
-    Q --> O
-    F --> O
-```
-
-### Session Lifecycle
+### 2. The Learning Lifecycle
+The session flows naturally from teaching a topic, to testing the student, to providing personalized feedback based on their performance.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Teaching
-    Teaching --> Quiz: mode switches to quiz
-    Quiz --> Feedback: student submits answer
-    Feedback --> Quiz: next question / retry
-    Quiz --> Complete: all answered and score >= 0.8
+    Teaching --> Quiz: Concept delivered, switch to testing
+    Quiz --> Feedback: Student submits answer
+    Feedback --> Quiz: Load next question or retry
+    Quiz --> Complete: All answered (Score >= 80%)
     Complete --> [*]
 ```
 
-## Work Completed
+---
 
-### 1. RAG Pipeline
+## 🛠️ Tech Stack
 
-The `rag/` package is in place and provides retrieval over NCERT textbook chunks.
+**Frontend**
+- React 18 & TypeScript
+- Vite for lightning-fast HMR and building
+- Framer Motion for micro-animations
 
-- `rag/ingest.py`
-  Builds FAISS indexes from NCERT PDFs and writes matching metadata JSON files.
-- `rag/retriever.py`
-  Exposes `retrieve(query, subject, grade, chapter=None, top_k=5) -> list[dict]`.
-  It:
-  - loads the correct FAISS index by subject and grade
-  - loads metadata from `rag/index/*_meta.json`
-  - embeds the user query with `sentence-transformers/all-MiniLM-L6-v2`
-  - filters by chapter when provided
-  - returns the top matching NCERT chunks
-- `rag/test_retriever.py`
-  Basic retriever test coverage.
+**Backend**
+- **FastAPI** (Async web framework)
+- **LangGraph** (Multi-agent orchestration & state routing)
+- **Groq** (Ultra-low latency LLM inference using `llama-3.3-70b-versatile`)
+- **asyncpg** & **redis.asyncio** (Database drivers)
 
-Indexed data currently present in `rag/index/`:
+**AI & RAG**
+- **FAISS** (Local vector database)
+- **Sentence-Transformers** (`all-MiniLM-L6-v2` for embeddings)
+- **PyMuPDF** (PDF text extraction)
 
-- `math_class6.faiss`
-- `math_class6_meta.json`
-- `sst_class6.faiss`
-- `sst_class6_meta.json`
+**Infrastructure**
+- **Render:** Backend API hosting
+- **Vercel:** Frontend static hosting
+- **Neon:** Serverless PostgreSQL
+- **Upstash:** Serverless Redis
 
-## 2. LangGraph Multi-Agent System
+---
 
-The `agents/` package has been added to implement the multi-agent orchestration system.
+## 🚀 Quick Start (Local Development)
 
-### File Structure
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- A running PostgreSQL instance
+- A running Redis instance (or Upstash URL)
+- A Groq API Key
 
-- `agents/state.py`
-  Shared `LearningState` `TypedDict`.
-- `agents/orchestrator.py`
-  Pure Python router node.
-- `agents/subject_agents.py`
-  Math, Science, and SST teaching agents.
-- `agents/quiz_agent.py`
-  Quiz Generator and Feedback Agent.
-- `agents/prompts.py`
-  All system prompts stored as constants.
-- `agents/graph.py`
-  LangGraph graph assembly and `run_session(initial_state)` entrypoint.
-- `agents/__init__.py`
-  Re-exports `LearningState`, `app`, and `run_session`.
+### 1. Backend Setup
 
-### State Schema
+```bash
+cd backend
 
-`LearningState` currently supports:
+# Create and activate virtual environment
+python -m venv myenv
+source myenv/bin/activate  # On Windows: myenv\Scripts\activate
 
-- `student_id`
-- `grade`
-- `subject`
-- `chapter`
-- `topic`
-- `mode`
-- `retrieved_context`
-- `teaching_output`
-- `quiz_questions`
-- `current_question_index`
-- `student_answer`
-- `feedback_output`
-- `session_score`
-- `weak_topics`
-- `messages`
+# Install dependencies
+pip install -r requirements.txt
 
-### Orchestrator
+# Set up environment variables
+cp .env.example .env
+# Edit .env and add your GROQ_API_KEY, DATABASE_URL, and REDIS_URL
 
-The orchestrator:
-
-- runs first on every graph invocation
-- makes no LLM call
-- routes based on `mode`
-- routes teaching mode by `subject`
-- marks the session as `complete` when:
-  - `mode == "quiz"`
-  - all questions are answered
-  - `session_score >= 0.8`
-
-Routing map used:
-
-- `math -> math_agent`
-- `science -> science_agent`
-- `sst -> sst_agent`
-- `quiz -> quiz_generator`
-- `feedback -> feedback_agent`
-
-### Subject Agents
-
-Implemented subject agents:
-
-- `math_agent`
-- `science_agent`
-- `sst_agent`
-
-Each subject agent follows the same pattern:
-
-1. Calls `retrieve(topic, subject, grade, chapter, top_k=5)`.
-2. Stores retrieved chunks in `state["retrieved_context"]`.
-3. Formats those chunks into a single context string.
-4. Calls Groq with the agent-specific system prompt.
-5. Forces JSON-only output.
-6. Parses the JSON response.
-7. Updates `state["teaching_output"]`.
-8. Appends the result to `state["messages"]`.
-
-Model settings:
-
-- Provider: Groq
-- Default model: `openai/gpt-oss-120b`
-- Override model with: `GROQ_MODEL`
-- Temperature for teaching agents: `0.3`
-
-### Quiz and Feedback Agents
-
-Implemented:
-
-- `quiz_generator`
-- `feedback_agent`
-
-`quiz_generator`:
-
-- uses retrieved NCERT context
-- builds quiz questions grounded in that context only
-- prioritizes `weak_topics`
-- returns parsed JSON question objects into `state["quiz_questions"]`
-
-`feedback_agent`:
-
-- evaluates the current student answer
-- returns structured feedback JSON
-- updates:
-  - `feedback_output`
-  - `session_score`
-  - `weak_topics`
-  - `current_question_index`
-
-## 3. Prompt Layer
-
-Exact prompt constants were added in `agents/prompts.py` for:
-
-- `MATH_AGENT_PROMPT`
-- `SCIENCE_AGENT_PROMPT`
-- `SST_AGENT_PROMPT`
-- `QUIZ_GENERATOR_PROMPT`
-- `FEEDBACK_AGENT_PROMPT`
-
-These prompts are designed to keep every response grounded in the retrieved NCERT context and to return structured JSON.
-
-## 4. Graph Assembly
-
-The LangGraph graph is assembled in `agents/graph.py` using `StateGraph(LearningState)`.
-
-### Graph Structure Snapshot
-
-```text
-START
-  -> orchestrator
-     -> math_agent -> orchestrator
-     -> science_agent -> orchestrator
-     -> sst_agent -> orchestrator
-     -> quiz_generator -> orchestrator
-     -> feedback_agent -> orchestrator
-     -> END
+# Start the FastAPI server
+uvicorn api.main:app --reload
 ```
 
-Nodes added:
+### 2. Frontend Setup
 
-- `orchestrator`
-- `math_agent`
-- `science_agent`
-- `sst_agent`
-- `quiz_generator`
-- `feedback_agent`
+```bash
+cd frontend
 
-Edges added:
+# Install dependencies
+npm install
 
-- `START -> orchestrator`
-- conditional edges from `orchestrator`
-- each subject agent returns to `orchestrator`
-- `quiz_generator` returns to `orchestrator`
-- `feedback_agent` returns to `orchestrator`
+# Set up environment variables
+# Create a .env file and add: VITE_API_URL=http://localhost:8000
 
-Compiled graph entrypoint:
-
-- `app = graph.compile()`
-- `run_session(initial_state: dict) -> LearningState`
-
-### Teaching Flow Visualization
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant O as Orchestrator
-    participant A as Subject Agent
-    participant R as Retriever
-    participant L as Claude
-    participant S as LearningState
-
-    U->>O: Initial state with mode=teaching
-    O->>A: Route by subject
-    A->>R: retrieve(topic, subject, grade, chapter, top_k=5)
-    R-->>A: NCERT chunks
-    A->>L: Prompt + retrieved context
-    L-->>A: JSON teaching response
-    A->>S: Update retrieved_context, teaching_output, messages
-    A->>O: Return control
+# Start the development server
+npm run dev
 ```
 
-### Quiz and Feedback Flow Visualization
+---
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant O as Orchestrator
-    participant Q as Quiz Generator
-    participant F as Feedback Agent
-    participant L as Claude
-    participant S as LearningState
+## 🧠 Managing the Knowledge Base (RAG)
 
-    U->>O: mode=quiz
-    O->>Q: Generate questions
-    Q->>L: Quiz prompt + NCERT context
-    L-->>Q: JSON question list
-    Q->>S: Store quiz_questions
+TeacherJi's intelligence comes from its offline vector indices. To add new textbooks:
 
-    U->>O: mode=feedback + student_answer
-    O->>F: Evaluate answer
-    F->>L: Feedback prompt
-    L-->>F: JSON feedback
-    F->>S: Update feedback_output, score, weak_topics, question index
-    F->>O: Return control
-```
+1. Place your NCERT textbook PDFs in the `backend/data/` folder.
+2. Run the ingestion script from the `backend/` directory:
+   ```bash
+   python -m rag.ingest --subject math --grade 6 --pdf data/math_class6.pdf
+   ```
+3. This will chunk the text, generate embeddings, and save the `.faiss` and `_meta.json` files to `backend/rag/index/`.
 
-## 5. Dependencies Added
+---
 
-`requirements.txt` now includes:
+## 🌍 Production Deployment
 
-- `PyMuPDF==1.24.0`
-- `sentence-transformers==2.7.0`
-- `faiss-cpu==1.8.0`
-- `numpy<2`
-- `tqdm`
-- `langgraph`
-- `groq`
+### Backend (Render)
+1. Create a **PostgreSQL** database on Render or Neon.
+2. Create a new **Web Service** on Render pointing to the `backend/` root directory.
+3. Select the **Docker** environment.
+4. Add your `GROQ_API_KEY`, `DATABASE_URL`, and `REDIS_URL` to the Render environment variables.
 
-## 6. Environment Notes
+### Frontend (Vercel)
+1. Import the project into Vercel.
+2. Set the Root Directory to `frontend/`.
+3. Add the `VITE_API_URL` environment variable pointing to your live Render backend URL.
+4. Deploy!
 
-The project is being run from the conda environment located at:
+*(Note: Ensure your `frontend/node_modules` is completely ignored by Git to prevent Vercel build errors).*
 
-- `myenv`
-
-Verification was done using:
-
-- `.\myenv\python.exe`
-
-Environment variables are loaded automatically from a local `.env` file via `python-dotenv`.
-
-Typical setup:
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_MODEL=openai/gpt-oss-120b
-```
-
-## 7. Verification Completed
-
-The following checks were completed:
-
-- Python syntax check passed for the new `agents/` package.
-- `groq` and `langgraph` were installed into `myenv`.
-- `agents.graph` imports successfully in `myenv`.
-- `run_session({"mode": "complete"})` executes successfully and returns:
-
-```python
-{"mode": "complete"}
-```
-
-## 8. Current Limitation
-
-Live teaching, quiz generation, and feedback flows require a valid Groq API key in the active environment. The graph structure and imports are verified, but live LLM calls were not executed without credentials.
+---
+*Built with ❤️ for modern, AI-assisted education.*
