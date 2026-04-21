@@ -21,10 +21,10 @@ from typing import Any
 
 import asyncpg
 import redis.asyncio as aioredis
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from fastapi import HTTPException
 
-load_dotenv()
+load_dotenv(find_dotenv(usecwd=True), override=True)
 
 logger = logging.getLogger(__name__)
 
