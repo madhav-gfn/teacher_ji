@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
+# Restrict threading at the OS level before importing PyTorch/faiss
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+
 import faiss
+import torch
 from sentence_transformers import SentenceTransformer
+
+# Limit PyTorch threads to reduce memory footprint on free tiers (like Render 512MB RAM)
+torch.set_num_threads(1)
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 INDEX_DIR = Path(__file__).resolve().parent / "index"
