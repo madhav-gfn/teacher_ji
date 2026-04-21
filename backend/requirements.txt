@@ -1,0 +1,14 @@
+PyMuPDF==1.24.0
+sentence-transformers==2.7.0
+faiss-cpu==1.8.0
+numpy<2
+tqdm
+langgraph
+groq
+python-dotenv
+fastapi
+uvicorn[standard]
+redis
+asyncpg
+pydantic>=2.0
+httpx
