@@ -1,0 +1,28 @@
+version: "3.9"
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    restart: always
+    volumes:
+      - rag_index:/app/rag/index
+      - ./data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    restart: always
+
+  postgres:
+    restart: always
+
+  redis:
+    restart: always
+
+volumes:
+  pgdata:
+  rag_index:
