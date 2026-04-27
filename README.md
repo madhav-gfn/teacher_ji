@@ -1,4 +1,4 @@
-# 🎓 TeacherJi: AI-Powered NCERT Learning Platform
+#  TeacherJi: AI-Powered NCERT Learning Platform(low effort name tbh)
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)
