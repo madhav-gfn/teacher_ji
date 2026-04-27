@@ -10,10 +10,10 @@ from typing import Iterable
 import faiss
 import fitz
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+from rag.embeddings import embed_texts as embed_remote_texts
+
 MIN_CHARS = 200
 MAX_CHARS = 800
 BATCH_SIZE = 32
@@ -416,21 +416,11 @@ def build_chunk_records(
     return merged
 
 
-def load_model() -> SentenceTransformer:
-    return SentenceTransformer(MODEL_NAME)
-
-
-def embed_texts(model: SentenceTransformer, texts: list[str]) -> np.ndarray:
+def embed_texts(texts: list[str]) -> np.ndarray:
     embeddings: list[np.ndarray] = []
     for start in tqdm(range(0, len(texts), BATCH_SIZE), desc="Embedding chunks", unit="batch"):
         batch = texts[start : start + BATCH_SIZE]
-        batch_embeddings = model.encode(
-            batch,
-            batch_size=BATCH_SIZE,
-            convert_to_numpy=True,
-            normalize_embeddings=False,
-            show_progress_bar=False,
-        )
+        batch_embeddings = embed_remote_texts(batch, task="document")
         embeddings.append(batch_embeddings.astype("float32"))
 
     if not embeddings:
@@ -471,8 +461,7 @@ def ingest_subject(subject: str, grade: int, pdf_dir: Path) -> tuple[int, int]:
     if not metadata:
         raise ValueError("No chunks were generated from the provided PDFs.")
 
-    model = load_model()
-    embeddings = embed_texts(model, [item["text"] for item in metadata])
+    embeddings = embed_texts([item["text"] for item in metadata])
     write_index(subject=subject, grade=grade, embeddings=embeddings, metadata=metadata)
     return len(pdf_files), len(metadata)
 

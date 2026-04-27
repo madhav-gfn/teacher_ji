@@ -4,23 +4,18 @@ import json
 import os
 from pathlib import Path
 
-# Restrict threading at the OS level before importing PyTorch/faiss
+# Restrict threading at the OS level before importing faiss.
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
 import faiss
-import torch
-from sentence_transformers import SentenceTransformer
 
-# Limit PyTorch threads to reduce memory footprint on free tiers (like Render 512MB RAM)
-torch.set_num_threads(1)
+from rag.embeddings import embed_texts
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 INDEX_DIR = Path(__file__).resolve().parent / "index"
 _INDEX_CACHE: dict[tuple[str, int], faiss.Index] = {}
 _META_CACHE: dict[tuple[str, int], list[dict]] = {}
-_MODEL: SentenceTransformer | None = None
 
 
 class NCERTIndexNotFound(FileNotFoundError):
@@ -41,13 +36,6 @@ def _paths_for(subject: str, grade: int) -> tuple[Path, Path]:
         INDEX_DIR / f"{base_name}.faiss",
         INDEX_DIR / f"{base_name}_meta.json",
     )
-
-
-def _get_model() -> SentenceTransformer:
-    global _MODEL
-    if _MODEL is None:
-        _MODEL = SentenceTransformer(MODEL_NAME)
-    return _MODEL
 
 
 def _load_index(subject: str, grade: int) -> tuple[faiss.Index, list[dict]]:
@@ -92,15 +80,7 @@ def retrieve(
     top_k: int = 5,
 ) -> list[dict]:
     index, metadata = _load_index(subject, grade)
-    model = _get_model()
-
-    query_embedding = model.encode(
-        [query],
-        batch_size=1,
-        convert_to_numpy=True,
-        normalize_embeddings=False,
-        show_progress_bar=False,
-    ).astype("float32")
+    query_embedding = embed_texts([query], task="query")
 
     search_k = index.ntotal if chapter else min(max(top_k, 5), index.ntotal)
     distances, indices = index.search(query_embedding, search_k)
