@@ -19,8 +19,13 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 
 def call_groq_with_retry(client, model, system_prompt, user_message, max_attempts=3):
+    json_instruction = (
+        "Return ONLY one syntactically valid JSON object. "
+        "Use double-quoted JSON strings, arrays, booleans, and null only. "
+        "Do not use markdown, bold syntax, comments, numbered text outside strings, or trailing commas."
+    )
     messages = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": f"{system_prompt}\n\n{json_instruction}"},
         {"role": "user", "content": user_message},
     ]
     for attempt in range(1, max_attempts + 1):
@@ -29,7 +34,7 @@ def call_groq_with_retry(client, model, system_prompt, user_message, max_attempt
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                temperature=0.3,
+                temperature=0.1,
                 response_format={"type": "json_object"},
             )
             raw = response.choices[0].message.content
@@ -37,6 +42,15 @@ def call_groq_with_retry(client, model, system_prompt, user_message, max_attempt
         except (RateLimitError, APIStatusError) as e:
             print(f"Retry {attempt}/{max_attempts}: API error - {e}")
             if attempt < max_attempts:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "The previous generation was rejected because it was not valid JSON. "
+                            "Return the same content as strict JSON only. Put all prose inside quoted string values."
+                        ),
+                    }
+                )
                 time.sleep(2)
         except json.JSONDecodeError:
             print(f"Retry {attempt}/{max_attempts}: JSON parse failed")
@@ -48,6 +62,49 @@ def call_groq_with_retry(client, model, system_prompt, user_message, max_attempt
                 }
             )
     raise RuntimeError("Agent failed after 3 attempts")
+
+
+def _no_context_output(subject: str, chapter: str, topic: str) -> dict:
+    message = (
+        f"No NCERT context was found for topic '{topic}' in chapter '{chapter}'. "
+        "Please choose a chapter/topic that exists in the ingested textbook index."
+    )
+    if subject == "math":
+        return {
+            "headline": "NCERT context not found",
+            "explanation": message,
+            "ncert_example": "No NCERT example is available because retrieval returned no matching textbook chunk.",
+            "analogy": "It is like opening the wrong chapter in a textbook: the answer cannot be grounded until the correct page is found.",
+            "common_mistake": "A common mistake is using a chapter name from a different textbook edition.",
+            "guiding_question": "Which exact chapter title appears in the textbook index for this topic?",
+            "topics_covered": [],
+        }
+    if subject == "science":
+        return {
+            "headline": "NCERT context not found",
+            "explanation": message,
+            "real_world_example": "No example is available because retrieval returned no matching textbook chunk.",
+            "analogy": "It is like trying to observe an experiment without the required material.",
+            "diagram_description": "No diagram can be grounded without a matching NCERT passage.",
+            "guiding_question": "Which exact chapter title appears in the textbook index for this topic?",
+            "topics_covered": [],
+        }
+    return {
+        "headline": "NCERT context not found",
+        "story": message,
+        "key_facts": [
+            "No matching NCERT context was retrieved.",
+            "The requested chapter may not match the ingested textbook edition.",
+            "The answer was not generated to avoid unsupported content.",
+            "Use a chapter title present in the current index.",
+            "Rebuild or update the index if the textbook source changes.",
+        ],
+        "mnemonic": "MATCH: Match Asked Topic to Current Handbook.",
+        "timeline": [],
+        "connection_to_present": "Textbook editions change, so digital learning tools must use the same chapter names as the indexed book.",
+        "guiding_question": "Which exact chapter title appears in the textbook index for this topic?",
+        "topics_covered": [],
+    }
 
 
 def _format_context(chunks: list[dict]) -> str:
@@ -109,7 +166,40 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
         state["chapter"],
         top_k=5,
     )
+    if not retrieved_context:
+        fallback_query = (
+            f"{state.get('chapter', '')}. {state.get('topic', '')}. "
+            f"{_retrieval_query(state)}"
+        )
+        retrieved_context = retrieve(
+            fallback_query,
+            state["subject"],
+            state["grade"],
+            chapter=None,
+            top_k=5,
+        )
+
     context = _format_context(retrieved_context)
+    if not retrieved_context:
+        teaching_output = _no_context_output(
+            state["subject"],
+            state.get("chapter", ""),
+            state.get("topic", ""),
+        )
+        messages = list(state.get("messages", []))
+        messages.append(
+            {
+                "role": "assistant",
+                "name": agent_name,
+                "content": teaching_output,
+            }
+        )
+        return {
+            "retrieved_context": retrieved_context,
+            "teaching_output": teaching_output,
+            "messages": messages,
+        }
+
     system_prompt = render_prompt(
         prompt_template,
         grade=state["grade"],

@@ -3,29 +3,65 @@ import type { Subject } from "../api/client";
 export const curriculum: Record<Subject, Record<number, Record<string, string[]>>> = {
   math: {
     6: {
-      "Knowing Our Numbers": [
-        "Introduction to large numbers",
-        "Comparing numbers",
-        "Estimation",
-        "Roman numerals",
+      "Patterns in Mathematics": [
+        "Patterns in everyday life",
+        "Number patterns",
+        "Shape patterns",
+        "Growing patterns",
       ],
-      "Whole Numbers": [
-        "Natural numbers and whole numbers",
-        "Number line",
-        "Properties of whole numbers",
-        "Patterns in whole numbers",
+      "Lines and Angles": [
+        "Points, lines and rays",
+        "Angles and turns",
+        "Types of angles",
+        "Parallel and intersecting lines",
       ],
-      "Playing with Numbers": [
+      "Number Play": [
+        "Numbers in daily life",
+        "Large numbers and place value",
+        "Digit puzzles",
+        "Number patterns",
+      ],
+      "Data Handling and Presentation": [
+        "Collecting data",
+        "Organising data",
+        "Pictographs and bar graphs",
+        "Interpreting data",
+      ],
+      "Prime Time": [
         "Factors and multiples",
         "Prime and composite numbers",
-        "HCF and LCM",
-        "Divisibility rules",
+        "Common factors and common multiples",
+        "Divisibility patterns",
       ],
-      "Basic Geometrical Ideas": [
-        "Points, lines and line segments",
-        "Rays and angles",
-        "Triangles",
-        "Quadrilaterals and circles",
+      "Perimeter and Area": [
+        "Perimeter of rectangles and squares",
+        "Area by counting squares",
+        "Area of rectangles",
+        "Solving perimeter and area problems",
+      ],
+      Fractions: [
+        "Fractions as equal parts",
+        "Reading and representing fractions",
+        "Equivalent fractions",
+        "Comparing fractions",
+      ],
+      "Playing with Constructions": [
+        "Drawing circles",
+        "Constructing line segments",
+        "Constructing perpendiculars",
+        "Using ruler and compass",
+      ],
+      Symmetry: [
+        "Line symmetry",
+        "Finding lines of symmetry",
+        "Symmetry in shapes",
+        "Creating symmetric figures",
+      ],
+      "The Other Side of Zero": [
+        "Understanding zero and negatives",
+        "Integers in daily life",
+        "Number line with negative numbers",
+        "Comparing integers",
       ],
     },
     7: {

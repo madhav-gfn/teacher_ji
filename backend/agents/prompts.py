@@ -9,8 +9,8 @@ CHAPTER: {chapter}
 TOPIC: {topic}
 STUDENT GRADE: {grade}
 
-Your response must be a JSON object with exactly these keys:
-- "headline": A single bold statement summarizing the core concept (max 15 words)
+Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, bold syntax, comments, or unquoted values anywhere:
+- "headline": A plain string summarizing the core concept (max 15 words)
 - "explanation": Step-by-step explanation. For every mathematical concept, show the worked example from the NCERT text. Use numbered steps. Never skip steps. Max 4 steps.
 - "ncert_example": Copy or closely paraphrase the relevant example from the NCERT context provided. Always show working.
 - "analogy": A real-world analogy appropriate for a Class {grade} Indian student. Reference things they know - cricket scores, rupees, distances between cities.
@@ -29,7 +29,7 @@ CHAPTER: {chapter}
 TOPIC: {topic}
 STUDENT GRADE: {grade}
 
-Your response must be a JSON object with exactly these keys:
+Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
 - "headline": The single most important idea from this topic (max 15 words)
 - "explanation": Concept explained in 3 layers: (1) What is it in simple terms, (2) How does it work mechanically, (3) Why does it matter. Each layer is 2-3 sentences.
 - "real_world_example": A phenomenon the student has seen in daily Indian life that demonstrates this concept. Be specific - not just "nature" but "the reason your steel tiffin box doesn't melt at 100C".
@@ -47,7 +47,7 @@ CHAPTER: {chapter}
 TOPIC: {topic}
 STUDENT GRADE: {grade}
 
-Your response must be a JSON object with exactly these keys:
+Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
 - "headline": The single most important fact or idea (max 15 words)
 - "story": Explain this topic as a narrative. Put the student in the time and place. If it's history, make them feel the era. If it's geography, make them travel. If it's civics, make them experience the institution. 4-6 sentences.
 - "key_facts": A list of exactly 5 bullet-point facts the student must remember. Each fact is one sentence, begins with a number or date where relevant.
@@ -66,7 +66,7 @@ CHAPTER: {chapter}
 WEAK TOPICS (prioritize these): {weak_topics}
 DIFFICULTY: {difficulty} (easy = recall, medium = application, hard = analysis)
 
-Generate exactly {num_questions} multiple-choice questions. Return a JSON object with a single key "questions". Its value must be an array where each element has:
+Generate exactly {num_questions} multiple-choice questions. Return a syntactically valid JSON object with a single key "questions". Do not use markdown, comments, or unquoted values anywhere. Its value must be an array where each element has:
 - "question_id": sequential integer starting at 1
 - "question_type": "mcq"
 - "question": The question text. It must not be answerable from the stem alone.
@@ -87,7 +87,7 @@ STUDENT'S ANSWER: {student_answer}
 STUDENT GRADE: {grade}
 SUBJECT: {subject}
 
-Return a JSON object with exactly these keys:
+Return a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
 - "is_correct": boolean
 - "verdict": "correct", "partially_correct", or "incorrect"
 - "feedback": If correct - name the specific concept they demonstrated understanding of. If incorrect or partial - explain exactly where their thinking went wrong. Never just say "that's wrong". Show them the gap between what they said and what's true. Max 3 sentences.

@@ -63,11 +63,20 @@ def _get_context(state: LearningState) -> list[dict]:
     context = state.get("retrieved_context", [])
     if context:
         return context
-    return retrieve(
+    context = retrieve(
         state["topic"],
         state["subject"],
         state["grade"],
         state.get("chapter"),
+        top_k=8,
+    )
+    if context:
+        return context
+    return retrieve(
+        f"{state.get('chapter', '')}. {state.get('topic', '')}",
+        state["subject"],
+        state["grade"],
+        chapter=None,
         top_k=8,
     )
 
