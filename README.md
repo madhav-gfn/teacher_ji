@@ -172,3 +172,16 @@ my deployment has exeeded the memory limit
 so imma try hugging face emmbeddings to get this done
 may be this will reduce some load
 but  my FAISS database might also be the problem
+
+my HF model is not working its giving some HTTPS error
+I am getting this error when trying to use the Hugging Face API for embeddings:
+
+changed the model
+
+
+it was not the issue
+The real problem was model/task mismatch:
+
+sentence-transformers/all-MiniLM-L6-v2 and intfloat/multilingual-e5-small are served by HF Inference as sentence-similarity, not feature-extraction.
+Your RAG needs raw embedding vectors, so it must use HF feature_extraction.
+I switched the code to Hugging Face’s official InferenceClient.feature_extraction path and changed the model to one that actually works with your setup: microsoft/harrier-oss-v1-0.6b.
