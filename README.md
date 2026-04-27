@@ -165,7 +165,10 @@ TeacherJi's intelligence comes from its offline vector indices. To add new textb
 3. Add the `VITE_API_URL` environment variable pointing to your live Render backend URL.
 4. Deploy!
 
-*(Note: Ensure your `frontend/node_modules` is completely ignored by Git to prevent Vercel build errors).*
 
----
-*Built with ❤️ for modern, AI-assisted education.*
+
+a fresh issue has come up
+my deployment has exeeded the memory limit
+so imma try hugging face emmbeddings to get this done
+may be this will reduce some load
+but  my FAISS database might also be the problem
