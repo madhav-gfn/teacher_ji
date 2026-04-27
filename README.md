@@ -185,3 +185,29 @@ The real problem was model/task mismatch:
 sentence-transformers/all-MiniLM-L6-v2 and intfloat/multilingual-e5-small are served by HF Inference as sentence-similarity, not feature-extraction.
 Your RAG needs raw embedding vectors, so it must use HF feature_extraction.
 I switched the code to Hugging Face’s official InferenceClient.feature_extraction path and changed the model to one that actually works with your setup: microsoft/harrier-oss-v1-0.6b.
+
+
+
+still this doesn't work the backend is throwing 404 error
+and render shows failed to generate
+
+Final issue was:
+
+Your UI/backend curriculum still had old Class 6 math chapters like Whole Numbers.
+Your rebuilt PDF/index has current chapters like Number Play, Prime Time, The Other Side of Zero.
+Because of that mismatch, retrieval returned no NCERT context.
+Then the math prompt asked Groq for a “bold statement”, so Groq generated invalid JSON like:
+"headline": **"Natural and Whole Numbers Introduction"**
+
+
+I fixed:
+
+JSON prompts: no markdown/bold/unquoted values.
+Groq retry: adds strict JSON correction after JSON-mode rejection.
+Teaching retrieval: if chapter-filtered retrieval returns empty, it retries without stale chapter filter.
+Quiz retrieval: same fallback.
+Class 6 math curriculum in backend and frontend now matches the ingested PDF chapters.
+Verified a production-like math agent call succeeds:
+dict_keys([...])
+Numbers in daily life
+5 retrieved chunks

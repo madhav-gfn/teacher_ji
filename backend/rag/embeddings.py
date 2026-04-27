@@ -77,7 +77,7 @@ def _embed_huggingface(texts: list[str], task: EmbeddingTask) -> np.ndarray:
         raise EmbeddingError(
             "HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2 is routed "
             "by Hugging Face as sentence-similarity, not feature-extraction. Use "
-            "HF_EMBEDDING_MODEL=intfloat/multilingual-e5-small."
+            "HF_EMBEDDING_MODEL=microsoft/harrier-oss-v1-0.6b."
         )
 
     if HF_MODEL.startswith("intfloat/") and "e5" in HF_MODEL:
