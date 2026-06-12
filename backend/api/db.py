@@ -111,7 +111,8 @@ async def get_student(student_id: str) -> dict[str, Any] | None:
     )
     if row is None:
         return None
-    profile: dict[str, Any] = dict(row["profile"])
+    raw = row["profile"]
+    profile: dict[str, Any] = raw if isinstance(raw, dict) else json.loads(raw)
     profile["student_id"] = student_id
     profile["grade"] = row["grade"]
     return profile
