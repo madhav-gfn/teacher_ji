@@ -1,17 +1,3 @@
-"""
-Database connection setup for the NCERT Learning Platform API.
-
-Provides:
-- Redis (session state):  save_session / load_session helpers
-- Postgres (student data): pool init, get_student, upsert_student
-
-Both connections are initialised once during the FastAPI lifespan and exposed
-as module-level globals so routes can import them without re-connecting.
-
-Environment variables:
-    REDIS_URL     — defaults to redis://localhost:6379/0
-    DATABASE_URL  — defaults to postgresql://localhost/teacher_ji
-"""
 from __future__ import annotations
 
 import json
@@ -20,7 +6,7 @@ import os
 from typing import Any
 
 import asyncpg
-import redis.asyncio as aioredis
+from upstash_redis.asyncio import Redis as UpstashRedis
 from dotenv import load_dotenv, find_dotenv
 from fastapi import HTTPException
 
@@ -28,11 +14,7 @@ load_dotenv(find_dotenv(usecwd=True), override=True)
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Module-level connection handles (set during lifespan startup)
-# ---------------------------------------------------------------------------
-
-redis_client: aioredis.Redis | None = None
+redis_client: UpstashRedis | None = None
 pg_pool: asyncpg.Pool | None = None
 
 SESSION_TTL_SECONDS = 60 * 60 * 4  # 4 hours
@@ -53,37 +35,23 @@ CREATE TABLE IF NOT EXISTS students (
 
 
 async def init_redis() -> None:
-    """Create the Redis client and verify connectivity.
-
-    Supports both local redis:// and remote rediss:// (TLS) URLs.
-    Upstash and other managed Redis providers use rediss://.
-    """
     global redis_client
-    url = os.getenv("REDIS_URL", "redis://redis:6379")
-
-    # rediss:// scheme means TLS automatically in redis.asyncio.
-    # We pass ssl_cert_reqs=None to skip cert verification (standard for managed Redis).
-    use_ssl = url.startswith("rediss://")
-    kwargs = {"decode_responses": True}
-    if use_ssl:
-        kwargs["ssl_cert_reqs"] = None
-
-    redis_client = aioredis.from_url(url, **kwargs)
+    url = os.getenv("UPSTASH_REDIS_REST_URL")
+    token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+    if not url or not token:
+        raise RuntimeError("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be set")
+    redis_client = UpstashRedis(url=url, token=token)
     await redis_client.ping()
-    logger.info("Redis connected (%s): %s", "TLS" if use_ssl else "plain", url)
+    logger.info("Upstash Redis connected: %s", url)
 
 
 async def close_redis() -> None:
-    if redis_client:
-        await redis_client.aclose()
-        logger.info("Redis connection closed.")
+    pass  # Upstash REST client is stateless
 
 
 async def init_postgres() -> None:
-    """Create the asyncpg connection pool and ensure the students table exists."""
     global pg_pool
     dsn = os.getenv("DATABASE_URL", "postgresql://admin:admin@postgres:5432/ncert_platform")
-    # asyncpg doesn't parse sslmode from the DSN — strip it and pass ssl explicitly
     ssl: str | bool = False
     if "sslmode=require" in dsn:
         dsn = dsn.replace("?sslmode=require&", "?").replace("?sslmode=require", "").replace("&sslmode=require", "")
@@ -109,35 +77,22 @@ def _session_key(session_id: str) -> str:
     return f"session:{session_id}"
 
 
-async def save_session(
-    session_id: str,
-    state: dict[str, Any],
-    ttl: int = SESSION_TTL_SECONDS,
-) -> None:
-    """Persist session state as JSON with a TTL (default 4 h)."""
+async def save_session(session_id: str, state: dict[str, Any], ttl: int = SESSION_TTL_SECONDS) -> None:
     if redis_client is None:
-        raise RuntimeError("Redis client not initialised. Call init_redis() first.")
+        raise RuntimeError("Redis client not initialised.")
     await redis_client.setex(_session_key(session_id), ttl, json.dumps(state))
 
 
 async def load_session(session_id: str) -> dict[str, Any]:
-    """Load and deserialise session state from Redis.
-
-    Raises HTTP 404 if the session does not exist or has expired.
-    """
     if redis_client is None:
         raise RuntimeError("Redis client not initialised.")
     raw = await redis_client.get(_session_key(session_id))
     if raw is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Session '{session_id}' not found or has expired.",
-        )
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found or has expired.")
     return json.loads(raw)
 
 
 async def delete_session(session_id: str) -> None:
-    """Remove a session from Redis (e.g. after profile update at session end)."""
     if redis_client:
         await redis_client.delete(_session_key(session_id))
 
@@ -148,7 +103,6 @@ async def delete_session(session_id: str) -> None:
 
 
 async def get_student(student_id: str) -> dict[str, Any] | None:
-    """Return the student's profile dict, or None if not found."""
     if pg_pool is None:
         raise RuntimeError("Postgres pool not initialised.")
     row = await pg_pool.fetchrow(
@@ -163,18 +117,10 @@ async def get_student(student_id: str) -> dict[str, Any] | None:
     return profile
 
 
-async def upsert_student(
-    student_id: str,
-    grade: int,
-    profile: dict[str, Any],
-) -> None:
-    """Insert or update a student record. Touches updated_at on every call."""
+async def upsert_student(student_id: str, grade: int, profile: dict[str, Any]) -> None:
     if pg_pool is None:
         raise RuntimeError("Postgres pool not initialised.")
-    # Remove redundant keys before storing in JSONB
-    serialisable = {
-        k: v for k, v in profile.items() if k not in ("student_id", "grade")
-    }
+    serialisable = {k: v for k, v in profile.items() if k not in ("student_id", "grade")}
     await pg_pool.execute(
         """
         INSERT INTO students (student_id, grade, profile, created_at, updated_at)

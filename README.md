@@ -32,8 +32,8 @@ it was not the issue
 The real problem was model/task mismatch:
 
 sentence-transformers/all-MiniLM-L6-v2 and intfloat/multilingual-e5-small are served by HF Inference as sentence-similarity, not feature-extraction.
-Your RAG needs raw embedding vectors, so it must use HF feature_extraction.
-I switched the code to Hugging Face’s official InferenceClient.feature_extraction path and changed the model to one that actually works with your setup: microsoft/harrier-oss-v1-0.6b.
+my RAG needs raw embedding vectors, so it must use HF feature_extraction.
+I switched the code to Hugging Face’s official InferenceClient.feature_extraction path and changed the model to one that actually works with my setup: microsoft/harrier-oss-v1-0.6b.
 
 
 
@@ -42,8 +42,8 @@ and render shows failed to generate
 
 Final issue was:
 
-Your UI/backend curriculum still had old Class 6 math chapters like Whole Numbers.
-Your rebuilt PDF/index has current chapters like Number Play, Prime Time, The Other Side of Zero.
+my UI/backend curriculum still had old Class 6 math chapters like Whole Numbers.
+my rebuilt PDF/index has current chapters like Number Play, Prime Time, The Other Side of Zero.
 Because of that mismatch, retrieval returned no NCERT context.
 Then the math prompt asked Groq for a “bold statement”, so Groq generated invalid JSON like:
 "headline": **"Natural and Whole Numbers Introduction"**
@@ -168,7 +168,7 @@ pip install -r requirements.txt
 
 # Set up environment variables
 cp .env.example .env
-# Edit .env and add your GROQ_API_KEY, DATABASE_URL, and REDIS_URL
+# Edit .env and add my GROQ_API_KEY, DATABASE_URL, and REDIS_URL
 
 # Start the FastAPI server
 uvicorn api.main:app --reload
@@ -195,7 +195,7 @@ npm run dev
 
 TeacherJi's intelligence comes from its offline vector indices. To add new textbooks:
 
-1. Place your NCERT textbook PDFs in the `backend/data/` folder.
+1. Place my NCERT textbook PDFs in the `backend/data/` folder.
 2. Run the ingestion script from the `backend/` directory:
    ```bash
    python -m rag.ingest --subject math --grade 6 --pdf data/math_class6.pdf
@@ -210,10 +210,10 @@ TeacherJi's intelligence comes from its offline vector indices. To add new textb
 1. Create a **PostgreSQL** database on Render or Neon.
 2. Create a new **Web Service** on Render pointing to the `backend/` root directory.
 3. Select the **Docker** environment.
-4. Add your `GROQ_API_KEY`, `DATABASE_URL`, and `REDIS_URL` to the Render environment variables.
+4. Add my `GROQ_API_KEY`, `DATABASE_URL`, and `REDIS_URL` to the Render environment variables.
 
 ### Frontend (Vercel)
 1. Import the project into Vercel.
 2. Set the Root Directory to `frontend/`.
-3. Add the `VITE_API_URL` environment variable pointing to your live Render backend URL.
+3. Add the `VITE_API_URL` environment variable pointing to my live Render backend URL.
 4. Deploy!
