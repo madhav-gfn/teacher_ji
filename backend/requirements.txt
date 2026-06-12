@@ -7,7 +7,7 @@ groq
 python-dotenv
 fastapi
 uvicorn[standard]
-redis
+upstash-redis
 asyncpg
 pydantic>=2.0
 httpx
