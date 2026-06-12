@@ -1,18 +1,301 @@
-<<<<<<< HEAD
-# TeacherJi: AI-Powered NCERT Learning Platform
-=======
-#  TeacherJi: AI-Powered NCERT Learning Platform(low effort name tbh)
->>>>>>> 16c3b72934291a3492f9e7356fd9ce518969fe9a
+# TeacherJi — NCERT RAG Tutoring Platform
 
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)
 ![React](https://img.shields.io/badge/React-18+-61DAFB.svg)
-![LangGraph](https://img.shields.io/badge/LangGraph-AI-orange.svg)
-![Groq](https://img.shields.io/badge/LLM-Groq_Llama_3-black.svg)
+![Groq](https://img.shields.io/badge/LLM-Groq--Llama--3-black.svg)
+![Upstash](https://img.shields.io/badge/Redis-Upstash-00E9A3.svg)
+![NeonDB](https://img.shields.io/badge/Postgres-NeonDB-3ECF8E.svg)
 
-**TeacherJi** is an intelligent, personalized, and interactive learning system designed for students. By combining **Retrieval-Augmented Generation (RAG)** over official NCERT textbooks with a **Multi-Agent LangGraph Orchestrator**, TeacherJi provides grounded, hallucination-free tutoring, dynamic quiz generation, and personalized feedback.
+TeacherJi is a retrieval-augmented, multi-agent tutoring system that delivers NCERT-grounded teaching, quizzes, and targeted feedback. It combines an offline FAISS vector index of NCERT textbooks with structured LLM prompts to produce curriculum-aligned outputs.
 
 ---
+
+## Table of Contents
+- [Overview](#overview)
+- [Quickstart](#quickstart-local-development)
+- [Architecture](#architecture)
+- [Components](#components)
+- [API Reference](#api-reference)
+- [Data & Persistence](#data-models--persistence)
+- [Environment Variables](#environment-variables)
+
+---
+
+## Overview
+
+- Grounded teaching: every explanation and quiz is generated from retrieved NCERT text chunks.
+- Multi-agent design: subject-specific agents (math, science, SST), a quiz generator, and a feedback evaluator.
+- Short-lived sessions: Upstash Redis stores `LearningState` per session (4h TTL); NeonDB Postgres stores persistent student profiles.
+
+---
+
+## Quickstart (local development)
+
+**Prerequisites:** Python 3.11+, Node.js 18+, Groq API key, Upstash Redis, NeonDB Postgres
+
+**Backend**
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate    # Windows
+pip install -r requirements.txt
+# copy .env.example -> .env and fill secrets
+uvicorn api.main:app --reload --port 8000
+```
+
+**Frontend**
+```bash
+cd frontend
+npm install
+# set VITE_API_URL in frontend/.env
+npm run dev
+```
+
+**RAG ingestion** (run once per subject/grade)
+```bash
+cd backend
+python -m rag.ingest --subject math --grade 6 --pdf_dir data/ncert/class6/math
+```
+
+---
+
+## Architecture
+
+### System Architecture
+
+```mermaid
+flowchart TD
+    subgraph Client
+        UI[React SPA\nSelectionPage / TeachingPage\nQuizPage / ResultsPage]
+    end
+
+    subgraph Backend["Backend (FastAPI)"]
+        API[api/main.py\nFastAPI + CORS + Lifespan]
+        SR[session.py\nPOST /session/start\nPOST /session/next-topic\nPOST /session/question\nPOST /session/explain-differently]
+        QR[quiz.py\nPOST /quiz/start\nPOST /quiz/submit-answer]
+        STR[student.py\nGET /student/id\nPOST /student/id/update]
+    end
+
+    subgraph Agents["Agent Layer"]
+        MA[math_agent]
+        SCA[science_agent]
+        SST[sst_agent]
+        QA[quiz_generator]
+        FA[feedback_agent]
+    end
+
+    subgraph RAG["RAG Layer"]
+        RET[retriever.py\nlazy-load FAISS + meta]
+        IDX[(rag/index/\nsubject_classN.faiss\nsubject_classN_meta.json)]
+        EMB[embeddings.py\nHuggingFace feature_extraction]
+    end
+
+    subgraph External
+        GROQ[Groq API\nLlama 3]
+        REDIS[(Upstash Redis\nsession:uuid → LearningState\nTTL 4h)]
+        PG[(NeonDB Postgres\nstudents table\nprofile JSONB)]
+    end
+
+    UI -->|HTTP JSON| API
+    API --> SR & QR & STR
+    SR -->|asyncio.to_thread| MA & SCA & SST
+    QR -->|asyncio.to_thread| QA & FA
+    MA & SCA & SST & QA & FA --> RET
+    RET --> IDX
+    RET --> EMB
+    MA & SCA & SST & QA & FA -->|chat.completions| GROQ
+    SR & QR -->|save_session / load_session| REDIS
+    STR -->|get_student / upsert_student| PG
+```
+
+---
+
+### Teaching → Quiz → Feedback Flow
+
+```mermaid
+sequenceDiagram
+    actor Student
+    participant UI as React Frontend
+    participant API as FastAPI
+    participant Redis as Upstash Redis
+    participant Agent as Subject Agent
+    participant FAISS as FAISS Index
+    participant Groq as Groq LLM
+
+    Student->>UI: Select grade / subject / chapter
+    UI->>API: POST /session/start
+    API->>Agent: invoke(initial_state)
+    Agent->>FAISS: retrieve(topic, chapter, grade)
+    FAISS-->>Agent: top-5 NCERT chunks
+    Agent->>Groq: prompt + chunks → strict JSON
+    Groq-->>Agent: teaching_output JSON
+    Agent-->>API: updated state
+    API->>Redis: save_session(uuid, state, TTL=4h)
+    API-->>UI: TeachingResponse
+    UI-->>Student: headline / explanation / analogy / example
+
+    loop Each remaining topic
+        Student->>UI: click Next Topic
+        UI->>API: POST /session/next-topic
+        API->>Redis: load_session
+        Redis-->>API: state
+        API->>Agent: invoke(state, next_topic)
+        Agent->>FAISS: retrieve(next_topic)
+        FAISS-->>Agent: chunks
+        Agent->>Groq: prompt + chunks
+        Groq-->>Agent: teaching_output
+        API->>Redis: save_session
+        API-->>UI: TeachingResponse
+    end
+
+    Student->>UI: Finish chapter → Start Quiz
+    UI->>API: POST /quiz/start
+    API->>Redis: load_session
+    API->>Groq: quiz_generator prompt
+    Groq-->>API: quiz_questions[]
+    API->>Redis: save_session
+    API-->>UI: QuizResponse (all questions)
+
+    loop Each question
+        Student->>UI: select answer
+        UI->>API: POST /quiz/submit-answer
+        API->>Redis: load_session
+        API->>Groq: feedback_agent prompt
+        Groq-->>API: feedback_output + concept_strength
+        API->>Redis: save_session (update weak_topics, score)
+        API-->>UI: FeedbackResponse
+        UI-->>Student: correct/incorrect + explanation
+    end
+
+    Student->>UI: End session
+    UI->>API: POST /student/id/update
+    API->>DB: upsert_student (NeonDB Postgres)
+    UI-->>Student: ResultsPage (score + weak topics)
+```
+
+---
+
+### RAG Ingestion Pipeline
+
+```mermaid
+flowchart LR
+    PDF[NCERT PDF\ndata/ncert/classN/subject/] -->|PyMuPDF| PARSE[Parse pages\n+ section headers]
+    PARSE -->|200-800 char\nsentence-aware chunks| CHUNK[Text Chunks\n+ chapter metadata\n+ page numbers]
+    CHUNK -->|HuggingFace\nInferenceClient\nfeature_extraction| EMBED[Dense Vectors\n384-dim]
+    EMBED -->|faiss.IndexFlatL2| FIDX[(subject_classN.faiss)]
+    CHUNK -->|JSON| META[(subject_classN_meta.json)]
+```
+
+---
+
+### LearningState (Redis session schema)
+
+```mermaid
+classDiagram
+    class LearningState {
+        +str session_id
+        +str student_id
+        +int grade
+        +str subject
+        +str chapter
+        +str topic
+        +str mode
+        +list retrieved_context
+        +dict teaching_output
+        +list quiz_questions
+        +int current_question_index
+        +str student_answer
+        +dict feedback_output
+        +float session_score
+        +list weak_topics
+        +list messages
+        +list topics_covered
+        +list all_chapter_topics
+    }
+```
+
+---
+
+## Components
+
+### Backend
+| File | Responsibility |
+|---|---|
+| `api/main.py` | FastAPI app, lifespan (Redis + Postgres init), CORS |
+| `api/routes/session.py` | Teaching phase — start, next-topic, question, re-explain |
+| `api/routes/quiz.py` | Quiz phase — start quiz, submit answer |
+| `api/routes/student.py` | Persistent profile — get, update |
+| `api/db.py` | Upstash Redis REST client + asyncpg helpers |
+| `api/curriculum.py` | Canonical grade/subject/chapter → topic list mapping |
+| `agents/subject_agents.py` | `math_agent`, `science_agent`, `sst_agent` |
+| `agents/quiz_agent.py` | `quiz_generator`, `feedback_agent` |
+| `agents/prompts.py` | Strict JSON-only prompt templates |
+| `rag/ingest.py` | PDF → chunks → embeddings → FAISS index |
+| `rag/retriever.py` | Lazy-load FAISS, embed query, top-k search |
+| `rag/embeddings.py` | HuggingFace `feature_extraction` provider |
+
+### Frontend
+| File | Responsibility |
+|---|---|
+| `pages/SelectionPage.tsx` | Grade / subject / chapter picker, calls `startSession` |
+| `pages/TeachingPage.tsx` | Renders `TeachingCard` (headline, explanation, analogy, example) |
+| `pages/QuizPage.tsx` | MCQ quiz flow + `FeedbackPanel` per answer |
+| `pages/ResultsPage.tsx` | Session score + weak topics + revision option |
+| `store/sessionStore.ts` | Zustand store — single source of truth for client state |
+| `api/client.ts` | Typed fetch wrappers for all API endpoints |
+
+---
+
+## API Reference
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/session/start` | Start session, teach first topic |
+| POST | `/session/next-topic` | Advance to next topic or signal chapter complete |
+| POST | `/session/question` | Follow-up question → reteach current topic |
+| POST | `/session/explain-differently` | Re-explain with different examples |
+| POST | `/quiz/start` | Generate all MCQ questions for the chapter |
+| POST | `/quiz/submit-answer` | Evaluate one answer → feedback + score update |
+| GET | `/student/{student_id}` | Get persistent profile from Postgres |
+| POST | `/student/{student_id}/update` | Merge session results into profile |
+| GET | `/health` | Redis + Postgres connectivity check |
+
+---
+
+## Data Models & Persistence
+
+**Upstash Redis** — transient session state
+- Key: `session:{uuid}`, TTL: 4 hours
+- Value: `LearningState` serialized as JSON
+
+**NeonDB Postgres** — persistent student profiles
+```sql
+CREATE TABLE students (
+    student_id  TEXT PRIMARY KEY,
+    grade       INT  NOT NULL,
+    profile     JSONB NOT NULL DEFAULT '{}',  -- topics_mastered, weak_topics, quiz_history
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `GROQ_API_KEY` | Groq inference API key |
+| `DATABASE_URL` | NeonDB Postgres DSN (`postgresql://...`) |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (`https://...upstash.io`) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
+| `EMBEDDING_PROVIDER` | `huggingface` or `google` |
+| `HF_API_TOKEN` | Hugging Face token |
+| `HF_EMBEDDING_MODEL` | e.g. `microsoft/harrier-oss-v1-0.6b` |
+
+
+
 
 ## Dev Timeline
 
@@ -62,158 +345,3 @@ Numbers in daily life
 5 retrieved chunks
 
 ---
-
-## Key Features
-
-- **Multi-Agent Architecture:** Specialized, autonomous AI agents for Math, Science, and Social Studies (SST).
-- **100% NCERT Grounded:** Uses FAISS vector search to retrieve exact paragraphs from textbooks, ensuring answers are strictly curriculum-aligned.
-- **Dynamic Quizzing & Feedback:** Generates contextual questions on the fly, evaluates student answers, and tracks weak topics for future revision.
-- **High Performance:** Built on an asynchronous **FastAPI** backend with **PostgreSQL** for persistent profiles and **Redis** for lightning-fast session state.
-- **Interactive UI:** A highly responsive, animated frontend that guides students through a continuous learning loop.
-
----
-
-## Architecture & Workflows
-
-### 1. Overall System Architecture
-TeacherJi uses a modular architecture separating the stateful graph orchestrator from the stateless LLM and vector stores.
-
-```mermaid
-flowchart LR
-    A[Student Input] --> B[LangGraph Orchestrator]
-    B --> C[Math Agent]
-    B --> D[Science Agent]
-    B --> E[SST Agent]
-    B --> F[Quiz Generator]
-    B --> G[Feedback Agent]
-
-    C --> H[RAG Retriever]
-    D --> H
-    E --> H
-    F --> H
-
-    H --> I[(FAISS Index + Metadata)]
-    C --> J[Groq LLM API]
-    D --> J
-    E --> J
-    F --> J
-    G --> J
-
-    J --> K[Structured JSON Output]
-    K --> L[LearningState Update]
-    L --> B
-```
-
-### 2. The Learning Lifecycle
-The session flows naturally from teaching a topic, to testing the student, to providing personalized feedback based on their performance.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Teaching
-    Teaching --> Quiz: Concept delivered, switch to testing
-    Quiz --> Feedback: Student submits answer
-    Feedback --> Quiz: Load next question or retry
-    Quiz --> Complete: All answered (Score >= 80%)
-    Complete --> [*]
-```
-
----
-
-## Tech Stack
-
-**Frontend**
-- React 18 & TypeScript
-- Vite for lightning-fast HMR and building
-- Framer Motion for micro-animations
-
-**Backend**
-- **FastAPI** (Async web framework)
-- **LangGraph** (Multi-agent orchestration & state routing)
-- **Groq** (Ultra-low latency LLM inference using `llama-3.3-70b-versatile`)
-- **asyncpg** & **redis.asyncio** (Database drivers)
-
-**AI & RAG**
-- **FAISS** (Local vector database)
-- **Sentence-Transformers** (`all-MiniLM-L6-v2` for embeddings)
-- **PyMuPDF** (PDF text extraction)
-
-**Infrastructure**
-- **Render:** Backend API hosting
-- **Vercel:** Frontend static hosting
-- **Neon:** Serverless PostgreSQL
-- **Upstash:** Serverless Redis
-
----
-
-## Quick Start (Local Development)
-
-### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- A running PostgreSQL instance
-- A running Redis instance (or Upstash URL)
-- A Groq API Key
-
-### 1. Backend Setup
-
-```bash
-cd backend
-
-# Create and activate virtual environment
-python -m venv myenv
-source myenv/bin/activate  # On Windows: myenv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env and add my GROQ_API_KEY, DATABASE_URL, and REDIS_URL
-
-# Start the FastAPI server
-uvicorn api.main:app --reload
-```
-
-### 2. Frontend Setup
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Set up environment variables
-# Create a .env file and add: VITE_API_URL=http://localhost:8000
-
-# Start the development server
-npm run dev
-```
-
----
-
-## Managing the Knowledge Base (RAG)
-
-TeacherJi's intelligence comes from its offline vector indices. To add new textbooks:
-
-1. Place my NCERT textbook PDFs in the `backend/data/` folder.
-2. Run the ingestion script from the `backend/` directory:
-   ```bash
-   python -m rag.ingest --subject math --grade 6 --pdf data/math_class6.pdf
-   ```
-3. This will chunk the text, generate embeddings, and save the `.faiss` and `_meta.json` files to `backend/rag/index/`.
-
----
-
-## Production Deployment
-
-### Backend (Render)
-1. Create a **PostgreSQL** database on Render or Neon.
-2. Create a new **Web Service** on Render pointing to the `backend/` root directory.
-3. Select the **Docker** environment.
-4. Add my `GROQ_API_KEY`, `DATABASE_URL`, and `REDIS_URL` to the Render environment variables.
-
-### Frontend (Vercel)
-1. Import the project into Vercel.
-2. Set the Root Directory to `frontend/`.
-3. Add the `VITE_API_URL` environment variable pointing to my live Render backend URL.
-4. Deploy!
