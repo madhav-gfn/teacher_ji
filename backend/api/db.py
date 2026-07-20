@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 import asyncpg
+import redis.asyncio as aioredis
 from upstash_redis.asyncio import Redis as UpstashRedis
 from dotenv import load_dotenv, find_dotenv
 from fastapi import HTTPException
@@ -14,7 +15,7 @@ load_dotenv(find_dotenv(usecwd=True), override=True)
 
 logger = logging.getLogger(__name__)
 
-redis_client: UpstashRedis | None = None
+redis_client: Any = None
 pg_pool: asyncpg.Pool | None = None
 
 SESSION_TTL_SECONDS = 60 * 60 * 4  # 4 hours
@@ -48,17 +49,37 @@ CREATE TABLE IF NOT EXISTS documents (
 
 async def init_redis() -> None:
     global redis_client
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        # Some render redis instances require tls, ssl_cert_reqs="none" bypasses strictly checking certs.
+        # But 'ssl_cert_reqs' has been renamed in redis 4.x/5.x to be handled slightly differently or uses "none" string instead of None type in aioredis.
+        # Actually in recent redis-py 'ssl_cert_reqs' might be fine as a string "none" or it could use `ssl_cert_reqs="none"`.
+        # Just use standard `from_url` without the kwarg for standard local/render standard setups,
+        # or we check if "rediss" is in url to add ssl args.
+        kwargs: dict[str, Any] = {"decode_responses": True}
+        if redis_url.startswith("rediss://"):
+            kwargs["ssl_cert_reqs"] = "none"
+
+        redis_client = aioredis.from_url(redis_url, **kwargs)
+        await redis_client.ping()
+        logger.info("Standard Redis connected: %s", redis_url)
+        return
+
     url = os.getenv("UPSTASH_REDIS_REST_URL")
     token = os.getenv("UPSTASH_REDIS_REST_TOKEN")
     if not url or not token:
-        raise RuntimeError("UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must be set")
+        raise RuntimeError("Either REDIS_URL or (UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN) must be set")
     redis_client = UpstashRedis(url=url, token=token)
     await redis_client.ping()
     logger.info("Upstash Redis connected: %s", url)
 
 
 async def close_redis() -> None:
-    pass  # Upstash REST client is stateless
+    global redis_client
+    if isinstance(redis_client, aioredis.Redis):
+        await redis_client.aclose()
+        logger.info("Standard Redis connection closed.")
+    # Upstash REST client is stateless, no close method
 
 
 async def init_postgres() -> None:
