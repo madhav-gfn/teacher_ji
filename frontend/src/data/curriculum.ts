@@ -98,30 +98,66 @@ export const curriculum: Record<Subject, Record<number, Record<string, string[]>
   },
   science: {
     6: {
-      "Food: Where Does It Come From?": [
-        "Sources of food",
-        "Plant parts as food",
-        "Animal products as food",
-        "Herbivores, carnivores and omnivores",
+      "The Wonderful World of Science": [
+            "Science as exploration",
+            "Asking questions and curiosity",
+            "Understanding the natural world"
       ],
-      "Components of Food": [
-        "Nutrients in food",
-        "Carbohydrates and fats",
-        "Proteins and vitamins",
-        "Minerals and water",
-        "Balanced diet and deficiency diseases",
+      "Diversity in the Living World": [
+            "Variety of plants and animals",
+            "Grouping plants and animals",
+            "Features of different living things"
       ],
-      "Fibre to Fabric": [
-        "Types of fibres",
-        "Plant fibres: cotton and jute",
-        "Animal fibres: wool and silk",
-        "From fibre to fabric: spinning and weaving",
+      "Mindful Eating: A Path to a Healthy Body": [
+            "Nutrients in food",
+            "Balanced diet",
+            "Healthy eating habits"
       ],
-      "Sorting Materials into Groups": [
-        "Properties of materials",
-        "Transparency, solubility and density",
-        "Metals and non-metals",
+      "Exploring Magnets": [
+            "Discovery of magnets",
+            "Magnetic and non-magnetic materials",
+            "Poles of a magnet"
       ],
+      "Measurement of Length and Motion": [
+            "Standard units of measurement",
+            "Measuring length",
+            "Types of motion"
+      ],
+      "Materials Around Us": [
+            "Properties of materials",
+            "Sorting materials into groups",
+            "States of matter"
+      ],
+      "Temperature and its Measurement": [
+            "Hot and cold",
+            "Measuring temperature",
+            "Thermometers"
+      ],
+      "A Journey through States of Water": [
+            "Water as solid, liquid, gas",
+            "Evaporation and condensation",
+            "Water cycle"
+      ],
+      "Methods of Separation in Everyday Life": [
+            "Mixtures and pure substances",
+            "Methods of separation",
+            "Reversible and irreversible changes"
+      ],
+      "Living Creatures: Exploring their Characteristics": [
+            "Characteristics of living beings",
+            "Habitat and adaptation",
+            "Living and non-living things"
+      ],
+      "Nature's Treasures": [
+            "Natural resources",
+            "Conservation of resources",
+            "Importance of forests"
+      ],
+      "Beyond Earth": [
+            "The solar system",
+            "Stars and constellations",
+            "Space exploration"
+      ]
     },
     7: {
       "Nutrition in Plants": [
@@ -153,30 +189,76 @@ export const curriculum: Record<Subject, Record<number, Record<string, string[]>
   },
   sst: {
     6: {
-      "What, Where, How and When?": [
-        "Sources of history",
-        "Finding out about the past",
-        "What people ate, wore and where they lived",
-        "Names of the land and people",
+      "Locating Places on the Earth": [
+            "Globes and maps",
+            "Latitudes and longitudes",
+            "Standard time"
       ],
-      "From Hunting-Gathering to Growing Food": [
-        "Hunter-gatherers of the subcontinent",
-        "Beginning of farming and herding",
-        "A closer look: Mehrgarh",
-        "Changes brought by farming",
+      "Oceans and Continents": [
+            "Major oceans of the world",
+            "Continents and their features",
+            "Earth's surface"
       ],
-      "In the Earliest Cities": [
-        "The story of Harappa",
-        "What was special about Harappan cities",
-        "Life in Harappan cities",
-        "Decline of Harappan cities",
+      "Landforms and Life": [
+            "Mountains, plateaus, and plains",
+            "Life in different landforms",
+            "Adaptation to environment"
       ],
-      "The Earth in the Solar System": [
-        "The solar system",
-        "The moon",
-        "The earth: shape and size",
-        "Latitudes and longitudes",
+      "Timeline and Sources of History": [
+            "Understanding timelines",
+            "Archaeological sources",
+            "Literary sources"
       ],
+      "India, That Is Bharat": [
+            "Geographical features of India",
+            "Unity in diversity",
+            "The concept of Bharat"
+      ],
+      "The Beginnings of Indian Civilisation": [
+            "Early humans in India",
+            "The Indus Valley Civilisation",
+            "Vedic period"
+      ],
+      "India's Cultural Roots": [
+            "Languages and literature",
+            "Art and architecture",
+            "Religions and philosophies"
+      ],
+      "Unity in Diversity, or 'Many in the One'": [
+            "Cultural diversity of India",
+            "Festivals and traditions",
+            "Shared values and heritage"
+      ],
+      "Family and Community": [
+            "Role of the family",
+            "Types of communities",
+            "Living together"
+      ],
+      "Grassroots Democracy - Part 1 Governance": [
+            "What is governance?",
+            "Levels of government",
+            "Democratic principles"
+      ],
+      "Grassroots Democracy - Part 2 Local Government in Rural Areas": [
+            "Panchayati Raj system",
+            "Gram Sabha and Gram Panchayat",
+            "Functions of local government"
+      ],
+      "Grassroots Democracy - Part 3 Local Government in Urban Areas": [
+            "Municipal Corporations",
+            "Municipal Councils",
+            "Urban administration"
+      ],
+      "The Value of Work": [
+            "Different types of work",
+            "Dignity of labour",
+            "Economic value of work"
+      ],
+      "Economic Activities Around Us": [
+            "Primary, secondary, tertiary sectors",
+            "Agriculture and industries",
+            "Services and trade"
+      ]
     },
     7: {
       "Tracing Changes Through a Thousand Years": [
