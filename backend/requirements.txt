@@ -13,3 +13,4 @@ pydantic>=2.0
 httpx
 huggingface_hub>=0.30.0
 redis
+python-multipart

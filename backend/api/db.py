@@ -30,6 +30,18 @@ CREATE TABLE IF NOT EXISTS students (
 );
 """
 
+_CREATE_DOCUMENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS documents (
+    document_id  TEXT PRIMARY KEY,
+    student_id   TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    filename     TEXT NOT NULL,
+    topics       JSONB NOT NULL DEFAULT '[]',
+    chunk_count  INT NOT NULL DEFAULT 0,
+    created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+);
+"""
+
 # ---------------------------------------------------------------------------
 # Startup / shutdown
 # ---------------------------------------------------------------------------
@@ -80,6 +92,7 @@ async def init_postgres() -> None:
     pg_pool = await asyncpg.create_pool(dsn=dsn, min_size=2, max_size=10, ssl=ssl)
     async with pg_pool.acquire() as conn:
         await conn.execute(_CREATE_STUDENTS_TABLE)
+        await conn.execute(_CREATE_DOCUMENTS_TABLE)
     logger.info("Postgres connected and schema ready.")
 
 
@@ -156,3 +169,76 @@ async def upsert_student(student_id: str, grade: int, profile: dict[str, Any]) -
         grade,
         json.dumps(serialisable),
     )
+
+
+# ---------------------------------------------------------------------------
+# Documents (student-uploaded study material)
+# ---------------------------------------------------------------------------
+
+
+def _document_row_to_dict(row: Any) -> dict[str, Any]:
+    data = dict(row)
+    raw_topics = data.get("topics")
+    data["topics"] = raw_topics if isinstance(raw_topics, list) else json.loads(raw_topics or "[]")
+    created_at = data.get("created_at")
+    data["created_at"] = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at)
+    return data
+
+
+async def insert_document(
+    document_id: str,
+    student_id: str,
+    title: str,
+    filename: str,
+    topics: list[str],
+    chunk_count: int,
+) -> None:
+    if pg_pool is None:
+        raise RuntimeError("Postgres pool not initialised.")
+    await pg_pool.execute(
+        """
+        INSERT INTO documents (document_id, student_id, title, filename, topics, chunk_count, created_at)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW())
+        """,
+        document_id,
+        student_id,
+        title,
+        filename,
+        json.dumps(topics),
+        chunk_count,
+    )
+
+
+async def list_documents(student_id: str) -> list[dict[str, Any]]:
+    if pg_pool is None:
+        raise RuntimeError("Postgres pool not initialised.")
+    rows = await pg_pool.fetch(
+        """
+        SELECT document_id, title, filename, topics, chunk_count, created_at
+        FROM documents
+        WHERE student_id = $1
+        ORDER BY created_at DESC
+        """,
+        student_id,
+    )
+    return [_document_row_to_dict(row) for row in rows]
+
+
+async def get_document(document_id: str) -> dict[str, Any] | None:
+    if pg_pool is None:
+        raise RuntimeError("Postgres pool not initialised.")
+    row = await pg_pool.fetchrow(
+        """
+        SELECT document_id, student_id, title, filename, topics, chunk_count, created_at
+        FROM documents
+        WHERE document_id = $1
+        """,
+        document_id,
+    )
+    return _document_row_to_dict(row) if row else None
+
+
+async def delete_document(document_id: str) -> None:
+    if pg_pool is None:
+        raise RuntimeError("Postgres pool not initialised.")
+    await pg_pool.execute("DELETE FROM documents WHERE document_id = $1", document_id)

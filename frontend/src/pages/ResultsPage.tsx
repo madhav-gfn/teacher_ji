@@ -18,6 +18,7 @@ export function ResultsPage() {
   const {
     studentId,
     sessionId,
+    documentId,
     grade,
     subject,
     chapter,
@@ -27,14 +28,23 @@ export function ResultsPage() {
     setSession,
   } = useSessionStore();
 
+  const isCustom = subject === "custom";
+
   const scorePercent = Math.round(sessionScore * 100);
   const masteredTopics = useMemo(
     () => topicsCompleted.filter((topic) => !weakTopics.includes(topic)),
     [topicsCompleted, weakTopics],
   );
 
-  const allTopics = grade && subject && chapter ? getTopics(grade, subject, chapter) : [];
-  const nextChapter = grade && subject && chapter ? getNextChapter(grade, subject, chapter) : null;
+  // "custom" (uploaded material) has no static curriculum entry — fall back
+  // to whatever topics this session actually covered.
+  const allTopics = isCustom
+    ? Array.from(new Set([...topicsCompleted, ...weakTopics]))
+    : grade && subject && chapter
+      ? getTopics(grade, subject, chapter)
+      : [];
+  const nextChapter =
+    !isCustom && grade && subject && chapter ? getNextChapter(grade, subject, chapter) : null;
 
   const persistResults = useMutation({
     mutationFn: async () => {
@@ -168,14 +178,24 @@ export function ResultsPage() {
                 return;
               }
 
-              const response = await apiClient.startSession({
-                student_id: studentId,
-                grade,
-                subject,
-                chapter,
-                topic: firstWeakTopic,
-                custom_topics: weakTopics,
-              });
+              const response = await apiClient.startSession(
+                subject === "custom"
+                  ? {
+                      student_id: studentId,
+                      document_id: documentId ?? undefined,
+                      grade: grade ?? undefined,
+                      topic: firstWeakTopic,
+                      custom_topics: weakTopics,
+                    }
+                  : {
+                      student_id: studentId,
+                      grade: grade ?? undefined,
+                      subject,
+                      chapter: chapter ?? undefined,
+                      topic: firstWeakTopic,
+                      custom_topics: weakTopics,
+                    },
+              );
 
               setSession({
                 sessionId: response.session_id,
@@ -200,8 +220,8 @@ export function ResultsPage() {
           <button
             type="button"
             onClick={async () => {
-              if (!nextChapter) {
-                setSession({ mode: "selection" });
+              if (!nextChapter || subject === "custom") {
+                setSession({ mode: isCustom ? "documents" : "selection" });
                 return;
               }
 
@@ -231,7 +251,11 @@ export function ResultsPage() {
             }}
             className="rounded-2xl border border-gray-200 bg-white px-6 py-4 text-sm font-semibold text-gray-700 transition hover:border-purple-200 hover:text-purple-700"
           >
-            {nextChapter ? "Next chapter" : "Back to chapter selection"}
+            {nextChapter && !isCustom
+              ? "Next chapter"
+              : isCustom
+                ? "Back to your library"
+                : "Back to chapter selection"}
           </button>
 
           {persistResults.error ? (
