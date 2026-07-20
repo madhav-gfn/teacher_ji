@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -18,16 +18,46 @@ from pydantic import BaseModel, Field
 
 class StartSessionRequest(BaseModel):
     student_id: str = Field(..., description="Unique student identifier")
-    grade: int = Field(..., ge=6, le=8, description="Student grade: 6, 7, or 8")
-    subject: Literal["math", "science", "sst"] = Field(
-        ..., description="Subject for this session"
+    document_id: str | None = Field(
+        default=None,
+        description="Uploaded document ID — set this to study your own material "
+        "instead of an NCERT chapter",
     )
-    chapter: str = Field(..., min_length=1, description="NCERT chapter title")
-    topic: str = Field(..., min_length=1, description="Starting topic within the chapter")
+    grade: int | None = Field(
+        default=None, ge=6, le=8, description="Student grade: 6, 7, or 8"
+    )
+    subject: Literal["math", "science", "sst"] | None = Field(
+        default=None, description="Subject for an NCERT session (omit when document_id is set)"
+    )
+    chapter: str | None = Field(
+        default=None, min_length=1, description="NCERT chapter title (omit when document_id is set)"
+    )
+    topic: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Starting topic. Auto-selected from custom_topics / the document's "
+        "topic list if omitted.",
+    )
     custom_topics: list[str] = Field(
         default_factory=list,
         description="Optional custom ordered topic list for this session",
     )
+
+    @model_validator(mode="after")
+    def _check_source(self) -> "StartSessionRequest":
+        if self.document_id:
+            return self
+        missing = [
+            name
+            for name, value in (("subject", self.subject), ("chapter", self.chapter), ("grade", self.grade))
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                f"Missing required field(s) for an NCERT session: {', '.join(missing)}. "
+                "Provide document_id instead to study your own uploaded material."
+            )
+        return self
 
 
 class TeachingResponse(BaseModel):
@@ -152,6 +182,28 @@ class UpdateProfileRequest(BaseModel):
     mastered_topics: list[str] = Field(default_factory=list)
     weak_topics: list[str] = Field(default_factory=list)
     quiz_date: str = Field(description="ISO-8601 date, e.g. '2026-04-21'")
+
+
+# ---------------------------------------------------------------------------
+# Documents (student-uploaded study material)
+# ---------------------------------------------------------------------------
+
+
+class DocumentSummary(BaseModel):
+    document_id: str
+    title: str
+    filename: str
+    topic_count: int
+    chunk_count: int
+    created_at: str = Field(description="ISO-8601 timestamp string")
+
+
+class DocumentDetail(DocumentSummary):
+    topics: list[str] = Field(default_factory=list)
+
+
+class UploadDocumentResponse(DocumentDetail):
+    pass
 
 
 # ---------------------------------------------------------------------------

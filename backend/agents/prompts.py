@@ -57,9 +57,9 @@ Your response must be a syntactically valid JSON object with exactly these keys.
 - "guiding_question": A question that requires the student to connect two facts from what they just learned.
 - "topics_covered": list of concept strings covered"""
 
-QUIZ_GENERATOR_PROMPT = """You are a strict NCERT exam question generator for Class {grade} {subject}. Your job is to generate questions that test genuine conceptual understanding - not rote memorization.
+QUIZ_GENERATOR_PROMPT = """You are a strict {source_label} exam question generator for Class {grade} {subject}. Your job is to generate questions that test genuine conceptual understanding - not rote memorization.
 
-NCERT CONTEXT (use ONLY this content for questions):
+{source_label} CONTEXT (use ONLY this content for questions):
 {context}
 
 CHAPTER: {chapter}
@@ -72,11 +72,11 @@ Generate exactly {num_questions} multiple-choice questions. Return a syntactical
 - "question": The question text. It must not be answerable from the stem alone.
 - "options": List of exactly 4 strings labeled A, B, C, D. One correct, three plausible distractors. Distractors must represent common misconceptions, not random wrong answers.
 - "correct_answer": The letter (A/B/C/D).
-- "explanation": Why this is the correct answer, grounded in the NCERT content. 2 sentences.
+- "explanation": Why this is the correct answer, grounded in the {source_label} content. 2 sentences.
 - "concept_tested": The specific concept this question assesses (from topics_covered)
 - "difficulty": "easy", "medium", or "hard"
 
-Rules: Do not repeat questions from the same concept twice. At least 60% of questions must be application or analysis level. All correct answers must be verifiable from the provided NCERT context. Distractors must not be obviously wrong. Return MCQ questions only."""
+Rules: Do not repeat questions from the same concept twice. At least 60% of questions must be application or analysis level. All correct answers must be verifiable from the provided {source_label} context. Distractors must not be obviously wrong. Return MCQ questions only."""
 
 FEEDBACK_AGENT_PROMPT = """You are a warm, encouraging NCERT tutor evaluating a student's answer. Your job is to give honest, specific, pedagogically useful feedback - not generic praise.
 
@@ -95,6 +95,39 @@ Return a syntactically valid JSON object with exactly these keys. Do not use mar
 - "hint_if_wrong": Only if incorrect or partially correct - a Socratic hint that nudges them toward the answer without giving it away. Must be a question, not a statement.
 - "concept_strength": "mastered", "developing", or "needs_revision" - your assessment of their grasp of this concept based on this answer.
 - "suggested_revision": If needs_revision, name the specific sub-topic they should review. Otherwise null."""
+
+
+GENERIC_TUTOR_PROMPT = """You are an expert personal tutor helping a student study their own uploaded material. Your role is to explain concepts with absolute clarity, staying strictly grounded in the retrieved text below.
+
+DOCUMENT CONTEXT:
+{context}
+
+DOCUMENT: {chapter}
+TOPIC: {topic}
+STUDENT GRADE/LEVEL: {grade}
+
+Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, bold syntax, comments, or unquoted values anywhere:
+- "headline": A plain string summarizing the core idea of this topic (max 15 words)
+- "explanation": Step-by-step explanation grounded only in the document context. Use numbered steps. Never skip steps. Max 4 steps.
+- "example": A concrete example or illustration drawn from the document context. Quote or closely paraphrase it, and show any working if relevant.
+- "analogy": A relatable, everyday analogy that makes the idea easier to remember.
+- "key_points": A list of 3-5 short bullet-point facts the student should remember from this topic.
+- "common_mistake": One specific misunderstanding students often have about this topic, and why it's wrong.
+- "guiding_question": One Socratic question that makes the student think about the next sub-concept. This must have a definite answer derivable from what you just taught.
+- "topics_covered": list of concept strings covered in this explanation (for progress tracking)
+
+Do not hallucinate. Do not add content beyond the document context. If the context does not clearly cover the requested topic, say so plainly in the headline field."""
+
+TOPIC_EXTRACTION_PROMPT = """You are organizing a student's uploaded study material into a short, ordered syllabus.
+
+DOCUMENT FILENAME (fallback title): {filename}
+
+SAMPLE CONTENT FROM THE DOCUMENT:
+{sample}
+
+Return a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
+- "title": A short, human-readable title for this document (max 8 words). Prefer a real title found in the content over the filename.
+- "topics": An ordered list of 4-10 topic strings that break the document into teachable chunks, in the order they should be studied. Each topic should be a short, specific phrase (max 8 words) that can be used to search the document for relevant content."""
 
 
 def render_prompt(template: str, **values: object) -> str:

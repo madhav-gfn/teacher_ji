@@ -1,6 +1,9 @@
 import type { Subject } from "../api/client";
 
 export const curriculum: Record<Subject, Record<number, Record<string, string[]>>> = {
+  // "custom" (uploaded study material) has no static curriculum — its topic
+  // list comes from the document record itself (see DocumentDetail.topics).
+  custom: {},
   math: {
     6: {
       "Patterns in Mathematics": [
@@ -222,6 +225,11 @@ export const subjectMeta: Record<
     label: "Social Studies",
     accent: "text-amber-700 bg-amber-50 border-amber-100",
     softAccent: "bg-amber-50 text-amber-700",
+  },
+  custom: {
+    label: "Your Material",
+    accent: "text-orange-700 bg-orange-50 border-orange-100",
+    softAccent: "bg-orange-50 text-orange-700",
   },
 };
 

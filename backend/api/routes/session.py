@@ -18,10 +18,11 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from agents.document_agent import document_tutor
 from agents.state import LearningState
 from agents.subject_agents import math_agent, science_agent, sst_agent
 from api.curriculum import get_chapter_topics
-from api.db import load_session, save_session
+from api.db import get_document, load_session, save_session
 from api.models import (
     ChapterCompleteResponse,
     ExplainDifferentlyRequest,
@@ -92,6 +93,22 @@ async def _invoke_teaching_agent(
         )
 
 
+def _agent_for_state(state: dict[str, Any]):
+    """Pick the teaching agent for a session: document_tutor for uploaded
+    material, otherwise the NCERT subject agent."""
+    if state.get("document_id"):
+        return document_tutor
+    return _SUBJECT_AGENTS.get(state.get("subject"))
+
+
+def _response_subject(state: dict[str, Any]) -> str:
+    """The subject string returned to the frontend — "custom" for uploaded
+    material (frontend routes on this), otherwise the real NCERT subject."""
+    if state.get("document_id"):
+        return "custom"
+    return state["subject"]
+
+
 def _topic_order_from_state(state: dict[str, Any]) -> list[str]:
     stored_topics = state.get("all_chapter_topics", [])
     if isinstance(stored_topics, list) and stored_topics:
@@ -122,7 +139,7 @@ async def _reteach_current_topic(
     user_message: str,
 ) -> TeachingResponse:
     subject = state["subject"]
-    agent_fn = _SUBJECT_AGENTS.get(subject)
+    agent_fn = _agent_for_state(state)
     if agent_fn is None:
         raise HTTPException(status_code=400, detail=f"Unsupported subject: {subject}")
 
@@ -137,7 +154,7 @@ async def _reteach_current_topic(
 
     return TeachingResponse(
         session_id=session_id,
-        subject=subject,
+        subject=_response_subject(reteach_state),
         chapter=reteach_state["chapter"],
         topic=reteach_state["topic"],
         teaching_output=reteach_state.get("teaching_output", {}),
@@ -159,37 +176,60 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
     """
     Create a new learning session.
 
+    Two mutually exclusive session sources (enforced by StartSessionRequest):
+    - NCERT: subject + grade + chapter → topic list from NCERT_CURRICULUM,
+      taught by the matching subject agent.
+    - Uploaded material: document_id → topic list generated at upload time
+      (agents/document_agent.py:extract_topics), taught by document_tutor.
+
     1. Generates a UUID session_id.
-    2. Looks up the chapter's topic list from NCERT_CURRICULUM.
-    3. Builds the initial LearningState and runs the subject agent for topic #1.
+    2. Resolves the topic list and teaching agent for the chosen source.
+    3. Builds the initial LearningState and runs the agent for topic #1.
     4. Stores state in Redis (TTL 4 h).
     5. Returns TeachingResponse with the agent output and remaining topics.
     """
     session_id = str(uuid.uuid4())
 
-    agent_fn = _SUBJECT_AGENTS.get(body.subject)
-    if agent_fn is None:
-        raise HTTPException(status_code=400, detail=f"Unsupported subject: {body.subject}")
+    if body.document_id:
+        document = await get_document(body.document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail=f"Document '{body.document_id}' not found.")
 
-    all_topics = list(body.custom_topics) or get_chapter_topics(body.subject, body.grade, body.chapter)
-    if not all_topics:
-        logger.warning(
-            "Chapter '%s' not found in curriculum for %s class%d. Proceeding without topic list.",
-            body.chapter,
-            body.subject,
-            body.grade,
-        )
+        agent_fn = document_tutor
+        response_subject = "custom"
+        state_subject = "the uploaded material"
+        chapter = document["title"]
+        all_topics = list(body.custom_topics) or list(document["topics"])
+        grade = body.grade or 8
+    else:
+        agent_fn = _SUBJECT_AGENTS.get(body.subject)
+        if agent_fn is None:
+            raise HTTPException(status_code=400, detail=f"Unsupported subject: {body.subject}")
 
-    # Use provided topic if it's valid, otherwise default to first curriculum topic
+        response_subject = body.subject
+        state_subject = body.subject
+        chapter = body.chapter
+        all_topics = list(body.custom_topics) or get_chapter_topics(body.subject, body.grade, body.chapter)
+        grade = body.grade
+
+        if not all_topics:
+            logger.warning(
+                "Chapter '%s' not found in curriculum for %s class%s. Proceeding without topic list.",
+                body.chapter,
+                body.subject,
+                body.grade,
+            )
+
+    # Use provided topic if it's valid, otherwise default to the first known topic
     topic = body.topic if body.topic else (all_topics[0] if all_topics else "Introduction")
     if topic not in all_topics:
         all_topics = [topic, *all_topics]
 
     initial_state: LearningState = {
         "student_id": body.student_id,
-        "grade": body.grade,
-        "subject": body.subject,
-        "chapter": body.chapter,
+        "grade": grade,
+        "subject": state_subject,
+        "chapter": chapter,
         "topic": topic,
         "mode": "teaching",
         "retrieved_context": [],
@@ -204,6 +244,7 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
         # API-layer tracking fields (not in agents/state.py — stored in Redis only)
         "topics_covered": [],
         "all_chapter_topics": all_topics,
+        "document_id": body.document_id or "",
     }
 
     updates = await _invoke_teaching_agent(agent_fn, initial_state)
@@ -215,8 +256,8 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
 
     return TeachingResponse(
         session_id=session_id,
-        subject=body.subject,
-        chapter=body.chapter,
+        subject=response_subject,
+        chapter=chapter,
         topic=topic,
         teaching_output=state.get("teaching_output", {}),
         retrieved_chunks=state.get("retrieved_context", []),
@@ -278,7 +319,7 @@ async def next_topic(body: NextTopicRequest):
     state["teaching_output"] = {}
     state["retrieved_context"] = []
 
-    agent_fn = _SUBJECT_AGENTS.get(subject)
+    agent_fn = _agent_for_state(state)
     if agent_fn is None:
         raise HTTPException(status_code=400, detail=f"Unsupported subject: {subject}")
 
@@ -291,7 +332,7 @@ async def next_topic(body: NextTopicRequest):
 
     return TeachingResponse(
         session_id=body.session_id,
-        subject=subject,
+        subject=_response_subject(state),
         chapter=chapter,
         topic=next_t,
         teaching_output=state.get("teaching_output", {}),

@@ -1,5 +1,5 @@
-export type Subject = "math" | "science" | "sst";
-export type SessionMode = "selection" | "teaching" | "quiz" | "results";
+export type Subject = "math" | "science" | "sst" | "custom";
+export type SessionMode = "selection" | "documents" | "teaching" | "quiz" | "results";
 
 export interface TimelineEvent {
   year: string;
@@ -21,15 +21,32 @@ export interface TeachingOutput {
   timeline?: TimelineEvent[];
   connection_to_present?: string;
   topics_covered?: string[];
+  // Generic "study your own material" schema (agents/document_agent.py)
+  example?: string;
+  key_points?: string[];
 }
 
 export interface StartSessionRequest {
   student_id: string;
-  grade: number;
-  subject: Subject;
-  chapter: string;
-  topic: string;
+  document_id?: string;
+  grade?: number;
+  subject?: "math" | "science" | "sst";
+  chapter?: string;
+  topic?: string;
   custom_topics?: string[];
+}
+
+export interface DocumentSummary {
+  document_id: string;
+  title: string;
+  filename: string;
+  topic_count: number;
+  chunk_count: number;
+  created_at: string;
+}
+
+export interface DocumentDetail extends DocumentSummary {
+  topics: string[];
 }
 
 export interface TeachingResponse {
@@ -138,18 +155,7 @@ export interface StudentProfile {
 
 const BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
-async function request<TResponse>(
-  path: string,
-  init?: RequestInit,
-): Promise<TResponse> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
-
+async function parseResponse<TResponse>(response: Response): Promise<TResponse> {
   const text = await response.text();
   const data = text ? (JSON.parse(text) as unknown) : null;
 
@@ -165,6 +171,21 @@ async function request<TResponse>(
   }
 
   return data as TResponse;
+}
+
+async function request<TResponse>(
+  path: string,
+  init?: RequestInit,
+): Promise<TResponse> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  });
+
+  return parseResponse<TResponse>(response);
 }
 
 export const apiClient = {
@@ -208,6 +229,30 @@ export const apiClient = {
     return request<StudentProfile>(`/student/${studentId}/update`, {
       method: "POST",
       body: JSON.stringify(body),
+    });
+  },
+  async uploadDocument(file: File, studentId: string, title?: string) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("student_id", studentId);
+    if (title) {
+      form.append("title", title);
+    }
+    const response = await fetch(`${BASE_URL}/documents/upload`, {
+      method: "POST",
+      body: form,
+    });
+    return parseResponse<DocumentDetail>(response);
+  },
+  listDocuments(studentId: string) {
+    return request<DocumentSummary[]>(`/documents?student_id=${encodeURIComponent(studentId)}`);
+  },
+  getDocument(documentId: string) {
+    return request<DocumentDetail>(`/documents/${documentId}`);
+  },
+  deleteDocument(documentId: string) {
+    return request<{ status: string; document_id: string }>(`/documents/${documentId}`, {
+      method: "DELETE",
     });
   },
 };
