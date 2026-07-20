@@ -169,28 +169,86 @@ def combine_heading_lines(lines: Iterable[str]) -> str | None:
     return " ".join(cleaned)
 
 
-def assign_chapter_metadata(sections: list[Section]) -> list[Section]:
+def normalize_title(title: str) -> str:
+    return re.sub(r'[^a-z0-9]', '', title.lower())
+
+def assign_chapter_metadata(sections: list[Section], subject: str = None, grade: int = None) -> list[Section]:
+
+    from api.curriculum import NCERT_CURRICULUM
+
+    # Try to load known chapters for this subject/grade
+    chapters = []
+    if subject and grade:
+        class_key = f"class{grade}"
+        chapters = list(NCERT_CURRICULUM.get(subject, {}).get(class_key, {}).keys())
+
     current_num: str | None = None
     current_title: str | None = None
+    current_idx: int = -1
 
     for section in sections:
-        chapter_match = None
-        for heading in section.heading_lines:
-            match = CHAPTER_RE.match(heading)
-            if match:
-                chapter_match = match
-                break
+        matched_idx = -1
 
-        if chapter_match:
-            current_num = chapter_match.group(1)
-            title_lines = [
-                line
-                for line in section.heading_lines
-                if not CHAPTER_RE.match(line)
-            ]
-            current_title = combine_heading_lines(title_lines) or f"Chapter {current_num}"
-        elif current_title is None and section.heading_lines:
-            current_title = combine_heading_lines(section.heading_lines)
+        if chapters:
+            all_text = " ".join(section.heading_lines + section.body_parts[:5]).lower()
+            norm_all = normalize_title(all_text)
+
+            # Check next chapter
+            next_idx = current_idx + 1
+            if next_idx < len(chapters):
+                norm_next = normalize_title(chapters[next_idx])
+                # We check heading lines first!
+                if any(norm_next in normalize_title(line) for line in section.heading_lines):
+                    matched_idx = next_idx
+
+            # If not found, check all chapters
+            if matched_idx == -1:
+                for i, chap in enumerate(chapters):
+                    if i < current_idx: continue
+                    norm_chap = normalize_title(chap)
+                    if any(norm_chap in normalize_title(line) for line in section.heading_lines):
+                        matched_idx = i
+                        break
+
+            # If still not found, check all text but only if it's the exact match and we are past page 15
+            # math TOC ends around page 15, sst around 20. So let's say page 20, except for chapter 1 which could be anywhere.
+            if matched_idx == -1 and (section.page_start > 20 or current_idx == -1):
+                if next_idx < len(chapters):
+                    norm_next = normalize_title(chapters[next_idx])
+                    if norm_next in norm_all:
+                        matched_idx = next_idx
+
+                if matched_idx == -1:
+                    for i, chap in enumerate(chapters):
+                        if i < current_idx: continue
+                        norm_chap = normalize_title(chap)
+                        if norm_chap in norm_all:
+                            matched_idx = i
+                            break
+
+        if matched_idx != -1:
+            current_idx = matched_idx
+            current_title = chapters[matched_idx]
+            current_num = str(matched_idx + 1)
+        elif not chapters:
+            # Fallback for when subject/grade is not provided
+            chapter_match = None
+            for heading in section.heading_lines:
+                match = CHAPTER_RE.match(heading)
+                if match:
+                    chapter_match = match
+                    break
+
+            if chapter_match:
+                current_num = chapter_match.group(1)
+                title_lines = [
+                    line
+                    for line in section.heading_lines
+                    if not CHAPTER_RE.match(line)
+                ]
+                current_title = combine_heading_lines(title_lines) or f"Chapter {current_num}"
+            elif current_title is None and section.heading_lines:
+                current_title = combine_heading_lines(section.heading_lines)
 
         section.chapter_num = current_num
         section.chapter_title = current_title or "Unknown"
@@ -558,7 +616,7 @@ def ingest_subject(subject: str, grade: int, pdf_dir: Path) -> tuple[int, int]:
     for pdf_path in tqdm(pdf_files, desc="Parsing PDFs", unit="pdf"):
         lines = extract_pdf_lines(pdf_path)
         sections = build_sections(pdf_path.name, lines)
-        all_sections.extend(assign_chapter_metadata(sections))
+        all_sections.extend(assign_chapter_metadata(sections, subject=subject, grade=grade))
 
     metadata = build_chunk_records(all_sections, grade=grade, subject=subject)
     if not metadata:
