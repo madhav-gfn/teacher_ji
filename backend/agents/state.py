@@ -22,3 +22,4 @@ class LearningState(TypedDict, total=False):
     messages: list[dict]
     topics_covered: list[str]
     all_chapter_topics: list[str]
+    document_id: str

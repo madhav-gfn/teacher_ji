@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { apiClient, type Subject } from "../api/client";
+import { apiClient } from "../api/client";
 import { getChapters, getTopics, subjectMeta } from "../data/curriculum";
 import { useSessionStore } from "../store/sessionStore";
 
@@ -30,7 +30,9 @@ function GlobeIcon() {
   );
 }
 
-const subjectCards: Array<{ subject: Subject; icon: JSX.Element }> = [
+type NcertSubject = "math" | "science" | "sst";
+
+const subjectCards: Array<{ subject: NcertSubject; icon: JSX.Element }> = [
   { subject: "math", icon: <SigmaIcon /> },
   { subject: "science", icon: <FlaskIcon /> },
   { subject: "sst", icon: <GlobeIcon /> },
@@ -39,9 +41,10 @@ const subjectCards: Array<{ subject: Subject; icon: JSX.Element }> = [
 export function SelectionPage() {
   const studentId = useSessionStore((state) => state.studentId);
   const setSession = useSessionStore((state) => state.setSession);
+  const setMode = useSessionStore((state) => state.setMode);
 
   const [grade, setGrade] = useState<number | null>(null);
-  const [subject, setSubject] = useState<Subject | null>(null);
+  const [subject, setSubject] = useState<NcertSubject | null>(null);
   const [chapter, setChapter] = useState("");
 
   const chapters = useMemo(() => getChapters(grade, subject), [grade, subject]);
@@ -98,6 +101,22 @@ export function SelectionPage() {
               Choose the class, subject, and chapter. The board will guide topic-by-topic
               teaching, then move into feedback-rich quizzing.
             </p>
+
+            <button
+              type="button"
+              onClick={() => setMode("documents")}
+              className="mt-6 flex w-full items-center justify-between rounded-2xl border border-orange-100 bg-orange-50 px-6 py-4 text-left transition hover:border-orange-200"
+            >
+              <div>
+                <p className="text-sm font-semibold text-orange-800">
+                  Have your own notes or a PDF instead?
+                </p>
+                <p className="mt-1 text-sm text-orange-700/80">
+                  Upload your own material and study it the same way.
+                </p>
+              </div>
+              <span className="text-lg font-semibold text-orange-700">→</span>
+            </button>
 
             <div className="mt-10 space-y-8">
               <section>

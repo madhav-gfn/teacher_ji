@@ -437,12 +437,115 @@ def write_index(subject: str, grade: int, embeddings: np.ndarray, metadata: list
     faiss_path = index_dir / f"{base_name}.faiss"
     meta_path = index_dir / f"{base_name}_meta.json"
 
+    _write_faiss_files(faiss_path, meta_path, embeddings, metadata)
+
+
+def _write_faiss_files(
+    faiss_path: Path,
+    meta_path: Path,
+    embeddings: np.ndarray,
+    metadata: list[dict],
+) -> None:
     index = faiss.IndexFlatL2(embeddings.shape[1])
     index.add(embeddings)
     faiss.write_index(index, str(faiss_path))
 
     with meta_path.open("w", encoding="utf-8") as meta_file:
         json.dump(metadata, meta_file, ensure_ascii=True, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Custom document ingestion (student-uploaded PDF / TXT / MD)
+#
+# Unlike the NCERT pipeline above, an uploaded document has no chapter
+# structure to detect — it is just chunked page-by-page and indexed on its
+# own, keyed by document_id instead of (subject, grade).
+# ---------------------------------------------------------------------------
+
+CUSTOM_INDEX_DIR = Path(__file__).resolve().parent / "index" / "custom"
+SUPPORTED_UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md"}
+
+
+def extract_pdf_pages(pdf_path: Path) -> list[tuple[int, str]]:
+    """Return (page_number, page_text) pairs of plain text for a PDF."""
+    pages: list[tuple[int, str]] = []
+    with fitz.open(pdf_path) as doc:
+        for page_index in range(doc.page_count):
+            page = doc.load_page(page_index)
+            text = normalize_text(page.get_text("text"))
+            if text:
+                pages.append((page_index + 1, text))
+    return pages
+
+
+def parse_upload_pages(path: Path) -> list[tuple[int, str]]:
+    """Parse an uploaded file into (page_number, text) pairs.
+
+    Supports .pdf (via PyMuPDF), .txt, and .md (read as plain text, treated
+    as a single "page").
+    """
+    suffix = path.suffix.lower()
+    if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
+        raise ValueError(f"Unsupported file type: {suffix}")
+
+    if suffix == ".pdf":
+        return extract_pdf_pages(path)
+
+    raw = path.read_text(encoding="utf-8", errors="ignore")
+    # normalize_text only collapses spaces/tabs — paragraph breaks (\n\n) are preserved.
+    text = normalize_text(raw)
+    return [(1, text)] if text else []
+
+
+def build_document_chunks(source_file: str, pages: list[tuple[int, str]]) -> list[dict]:
+    """Chunk (page, text) pairs into metadata records for one uploaded document."""
+    chunks: list[dict] = []
+    for page_num, page_text in pages:
+        for piece in split_section_text(page_text):
+            chunks.append(
+                {
+                    "text": piece,
+                    "source_file": source_file,
+                    "chapter_num": None,
+                    "chapter_title": None,
+                    "page_start": page_num,
+                    "page_end": page_num,
+                }
+            )
+
+    for chunk_index, chunk in enumerate(chunks):
+        chunk["chunk_index"] = chunk_index
+
+    return chunks
+
+
+def write_document_index(document_id: str, embeddings: np.ndarray, metadata: list[dict]) -> None:
+    CUSTOM_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+    faiss_path = CUSTOM_INDEX_DIR / f"{document_id}.faiss"
+    meta_path = CUSTOM_INDEX_DIR / f"{document_id}_meta.json"
+    _write_faiss_files(faiss_path, meta_path, embeddings, metadata)
+
+
+def ingest_document(document_id: str, upload_path: Path, title: str) -> list[dict]:
+    """Parse, chunk, embed, and index a single uploaded document.
+
+    Returns the chunk metadata list (also used for topic extraction).
+    Raises ValueError if the file has no extractable text.
+    """
+    pages = parse_upload_pages(upload_path)
+    if not pages:
+        raise ValueError("No extractable text found in the uploaded file.")
+
+    metadata = build_document_chunks(upload_path.name, pages)
+    if not metadata:
+        raise ValueError("No chunks were generated from the uploaded file.")
+
+    for chunk in metadata:
+        chunk["chapter_title"] = title
+
+    embeddings = embed_texts([item["text"] for item in metadata])
+    write_document_index(document_id, embeddings, metadata)
+    return metadata
 
 
 def ingest_subject(subject: str, grade: int, pdf_dir: Path) -> tuple[int, int]:

@@ -105,3 +105,77 @@ def retrieve(
             break
 
     return sorted(results, key=lambda item: item["score"])
+
+
+# ---------------------------------------------------------------------------
+# Custom document retrieval (student-uploaded material)
+#
+# Uploaded documents are indexed one-per-document under index/custom/, keyed
+# by document_id instead of (subject, grade). No chapter filtering applies —
+# the whole document is the retrieval corpus.
+# ---------------------------------------------------------------------------
+
+_CUSTOM_INDEX_DIR = INDEX_DIR / "custom"
+_CUSTOM_INDEX_CACHE: dict[str, faiss.Index] = {}
+_CUSTOM_META_CACHE: dict[str, list[dict]] = {}
+
+
+class DocumentIndexNotFound(FileNotFoundError):
+    """Raised when the FAISS index for an uploaded document is missing."""
+
+
+def custom_index_paths(document_id: str) -> tuple[Path, Path]:
+    return (
+        _CUSTOM_INDEX_DIR / f"{document_id}.faiss",
+        _CUSTOM_INDEX_DIR / f"{document_id}_meta.json",
+    )
+
+
+def _load_custom_index(document_id: str) -> tuple[faiss.Index, list[dict]]:
+    if document_id in _CUSTOM_INDEX_CACHE and document_id in _CUSTOM_META_CACHE:
+        return _CUSTOM_INDEX_CACHE[document_id], _CUSTOM_META_CACHE[document_id]
+
+    index_path, meta_path = custom_index_paths(document_id)
+    if not index_path.exists() or not meta_path.exists():
+        raise DocumentIndexNotFound(f"Missing index for uploaded document '{document_id}'.")
+
+    index = faiss.read_index(str(index_path))
+    with meta_path.open("r", encoding="utf-8-sig") as meta_file:
+        metadata = json.load(meta_file)
+
+    _CUSTOM_INDEX_CACHE[document_id] = index
+    _CUSTOM_META_CACHE[document_id] = metadata
+    return index, metadata
+
+
+def evict_document_index(document_id: str) -> None:
+    """Drop a cached index/metadata pair, e.g. after a document is deleted."""
+    _CUSTOM_INDEX_CACHE.pop(document_id, None)
+    _CUSTOM_META_CACHE.pop(document_id, None)
+
+
+def retrieve_document(query: str, document_id: str, top_k: int = 5) -> list[dict]:
+    index, metadata = _load_custom_index(document_id)
+    query_embedding = embed_texts([query], task="query")
+
+    search_k = min(max(top_k, 5), index.ntotal)
+    distances, indices = index.search(query_embedding, search_k)
+
+    results: list[dict] = []
+    for score, idx in zip(distances[0], indices[0]):
+        if idx < 0:
+            continue
+        item = metadata[idx]
+        results.append(
+            {
+                "text": item["text"],
+                "chapter_title": item.get("chapter_title"),
+                "chapter_num": item.get("chapter_num"),
+                "page_start": item.get("page_start"),
+                "score": float(score),
+            }
+        )
+        if len(results) >= top_k:
+            break
+
+    return sorted(results, key=lambda item: item["score"])
