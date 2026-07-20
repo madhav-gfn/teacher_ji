@@ -23,6 +23,7 @@ function getOrCreateStudentId() {
 interface SessionState {
   studentId: string;
   sessionId: string | null;
+  documentId: string | null;
   grade: number | null;
   subject: Subject | null;
   chapter: string | null;
@@ -52,6 +53,7 @@ interface SessionState {
 const initialState = () => ({
   studentId: getOrCreateStudentId(),
   sessionId: null,
+  documentId: null,
   grade: null,
   subject: null,
   chapter: null,

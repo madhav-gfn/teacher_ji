@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 from groq import Groq
-from rag.retriever import retrieve
+from rag.retriever import retrieve, retrieve_document
 
 from .prompts import FEEDBACK_AGENT_PROMPT, QUIZ_GENERATOR_PROMPT, render_prompt
 from .state import LearningState
@@ -63,6 +63,18 @@ def _get_context(state: LearningState) -> list[dict]:
     context = state.get("retrieved_context", [])
     if context:
         return context
+
+    document_id = state.get("document_id")
+    if document_id:
+        context = retrieve_document(state["topic"], document_id, top_k=8)
+        if context:
+            return context
+        return retrieve_document(
+            f"{state.get('chapter', '')}. {state.get('topic', '')}",
+            document_id,
+            top_k=8,
+        )
+
     context = retrieve(
         state["topic"],
         state["subject"],
@@ -96,6 +108,7 @@ def quiz_generator(state: LearningState) -> LearningState:
     context = _format_context(retrieved_context)
     difficulty = _difficulty_for(state)
     num_questions = _num_questions_for(state)
+    source_label = "study material" if state.get("document_id") else "NCERT"
     system_prompt = render_prompt(
         QUIZ_GENERATOR_PROMPT,
         grade=state["grade"],
@@ -105,6 +118,7 @@ def quiz_generator(state: LearningState) -> LearningState:
         weak_topics=", ".join(state.get("weak_topics", [])) or "None",
         difficulty=difficulty,
         num_questions=num_questions,
+        source_label=source_label,
     )
     user_request = _last_user_message(state.get("messages", [])) or (
         f"Generate a quiz for chapter '{state.get('chapter', '')}' and topic '{state.get('topic', '')}'."

@@ -59,7 +59,10 @@ export function TeachingCard({
       ? teachingOutput.ncert_example
       : subject === "science"
         ? teachingOutput.real_world_example
-        : teachingOutput.story;
+        : subject === "custom"
+          ? teachingOutput.example
+          : teachingOutput.story;
+  const keyPoints = teachingOutput.key_points ?? teachingOutput.key_facts;
 
   return (
     <div className="space-y-5">
@@ -109,9 +112,25 @@ export function TeachingCard({
       {exampleContent ? (
         <section className="rounded-xl border border-yellow-100 bg-yellow-50 p-6 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-yellow-800">
-            From Your NCERT Book
+            {subject === "custom" ? "From Your Document" : "From Your NCERT Book"}
           </p>
           <p className="mt-3 text-base leading-7 text-yellow-950">{exampleContent}</p>
+        </section>
+      ) : null}
+
+      {keyPoints?.length ? (
+        <section className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500">
+            Key Points To Remember
+          </p>
+          <ul className="mt-4 space-y-2">
+            {keyPoints.map((point) => (
+              <li key={point} className="flex gap-3 text-base leading-7 text-gray-800">
+                <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-600" />
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
@@ -147,7 +166,7 @@ export function TeachingCard({
         </div>
       </section>
 
-      {subject === "math" && teachingOutput.common_mistake ? (
+      {(subject === "math" || subject === "custom") && teachingOutput.common_mistake ? (
         <section className="rounded-xl border border-red-100 bg-red-50 p-6 shadow-sm">
           <div className="flex items-center gap-3 text-red-700">
             <WarningIcon />

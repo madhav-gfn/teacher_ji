@@ -24,7 +24,7 @@ from api.db import (
     redis_client,
 )
 from api.models import HealthResponse
-from api.routes import quiz, session, student
+from api.routes import documents, quiz, session, student
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,10 +90,12 @@ app.add_middleware(
 # session.py handles both session management AND subject-agent invocation.
 # quiz.py is purely /quiz/* — no overlap with session routes.
 # student.py is purely /student/* — no overlap with either.
+# documents.py is purely /documents/* — upload/list/delete study material.
 
 app.include_router(session.router)
 app.include_router(quiz.router)
 app.include_router(student.router)
+app.include_router(documents.router)
 
 
 # ---------------------------------------------------------------------------

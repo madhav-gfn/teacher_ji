@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { SelectionPage } from "./pages/SelectionPage";
+import { DocumentsPage } from "./pages/DocumentsPage";
 import { TeachingPage } from "./pages/TeachingPage";
 import { QuizPage } from "./pages/QuizPage";
 import { ResultsPage } from "./pages/ResultsPage";
@@ -10,6 +11,8 @@ export default function App() {
 
   const page = (() => {
     switch (mode) {
+      case "documents":
+        return <DocumentsPage />;
       case "teaching":
         return <TeachingPage />;
       case "quiz":
