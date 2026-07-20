@@ -14,7 +14,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from agents.quiz_agent import feedback_agent, quiz_generator
+from agents.graph import run_session
 from agents.state import LearningState
 from api.db import load_session, save_session
 from api.models import (
@@ -44,23 +44,24 @@ def _append_retry_message(state: LearningState) -> LearningState:
     return {**state, "messages": messages}
 
 
-async def _invoke_agent(agent_fn, state: LearningState) -> dict[str, Any]:
-    """Run a synchronous agent in a thread pool with a JSON-error retry."""
+async def _invoke_graph(state: LearningState) -> dict[str, Any]:
+    """Run the Supervisor-led LangGraph (agents/graph.py) in a thread pool for
+    one turn, with a JSON-error retry."""
     try:
-        return await asyncio.to_thread(agent_fn, state)
+        return await asyncio.to_thread(run_session, state)
     except (json.JSONDecodeError, KeyError, ValueError) as first_err:
-        logger.warning("Agent %s first attempt failed: %s", agent_fn.__name__, first_err)
+        logger.warning("Graph run first attempt failed: %s", first_err)
         retry_state = _append_retry_message(state)
         try:
-            return await asyncio.to_thread(agent_fn, retry_state)
+            return await asyncio.to_thread(run_session, retry_state)
         except Exception as second_err:
-            logger.error("Agent %s retry failed: %s", agent_fn.__name__, second_err)
+            logger.error("Graph run failed after retry: %s", second_err)
             raise HTTPException(
                 status_code=500,
                 detail="Agent failed to generate valid response. Please try again.",
             )
     except Exception as err:
-        logger.error("Agent %s unexpected error: %s", agent_fn.__name__, err)
+        logger.error("Graph run unexpected error: %s", err)
         raise HTTPException(
             status_code=500,
             detail="Agent failed to generate valid response. Please try again.",
@@ -89,8 +90,7 @@ async def start_quiz(body: StartQuizRequest) -> QuizResponse:
     state["student_answer"] = ""
     state["feedback_output"] = {}
 
-    updates = await _invoke_agent(quiz_generator, state)
-    state = {**state, **updates}
+    state = await _invoke_graph(state)
 
     questions: list[dict] = state.get("quiz_questions", [])
     if not questions:
@@ -145,8 +145,7 @@ async def submit_answer(body: SubmitAnswerRequest) -> FeedbackResponse:
     state["current_question_index"] = question_index
     state["mode"] = "feedback"
 
-    updates = await _invoke_agent(feedback_agent, state)
-    state = {**state, **updates}
+    state = await _invoke_graph(state)
 
     # ---- Weak-topic bookkeeping ----------------------------------------
     # feedback_agent already appends new weak topics; here we remove mastered ones.
@@ -160,7 +159,7 @@ async def submit_answer(body: SubmitAnswerRequest) -> FeedbackResponse:
         weak_topics = [t for t in weak_topics if t.strip().lower() != concept_tested.lower()]
         state["weak_topics"] = weak_topics
 
-    # Restore to quiz mode so orchestrator is consistent if graph is invoked later
+    # Restore to quiz mode so the Supervisor sees a consistent state on the next turn
     state["mode"] = "quiz"
 
     await save_session(body.session_id, state)

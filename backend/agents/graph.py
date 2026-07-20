@@ -2,31 +2,42 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from .orchestrator import ORCHESTRATOR_ROUTES, orchestrator_node, route_from_orchestrator
+from .document_agent import document_tutor
 from .quiz_agent import feedback_agent, quiz_generator
 from .state import LearningState
 from .subject_agents import math_agent, science_agent, sst_agent
+from .supervisor import route_from_supervisor, supervisor_node
 
 graph = StateGraph(LearningState)
 
-graph.add_node("orchestrator", orchestrator_node)
+graph.add_node("supervisor", supervisor_node)
 graph.add_node("math_agent", math_agent)
 graph.add_node("science_agent", science_agent)
 graph.add_node("sst_agent", sst_agent)
+graph.add_node("document_tutor", document_tutor)
 graph.add_node("quiz_generator", quiz_generator)
 graph.add_node("feedback_agent", feedback_agent)
 
-graph.add_edge(START, "orchestrator")
+graph.add_edge(START, "supervisor")
 graph.add_conditional_edges(
-    "orchestrator",
-    route_from_orchestrator,
-    {**ORCHESTRATOR_ROUTES, "complete": END},
+    "supervisor",
+    route_from_supervisor,
+    {
+        "math_agent": "math_agent",
+        "science_agent": "science_agent",
+        "sst_agent": "sst_agent",
+        "document_tutor": "document_tutor",
+        "quiz_generator": "quiz_generator",
+        "feedback_agent": "feedback_agent",
+        "complete": END,
+    },
 )
-graph.add_edge("math_agent", "orchestrator")
-graph.add_edge("science_agent", "orchestrator")
-graph.add_edge("sst_agent", "orchestrator")
-graph.add_edge("quiz_generator", "orchestrator")
-graph.add_edge("feedback_agent", "orchestrator")
+graph.add_edge("math_agent", "supervisor")
+graph.add_edge("science_agent", "supervisor")
+graph.add_edge("sst_agent", "supervisor")
+graph.add_edge("document_tutor", "supervisor")
+graph.add_edge("quiz_generator", "supervisor")
+graph.add_edge("feedback_agent", "supervisor")
 
 app = graph.compile()
 

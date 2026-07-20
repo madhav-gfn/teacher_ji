@@ -130,6 +130,25 @@ Return a syntactically valid JSON object with exactly these keys. Do not use mar
 - "topics": An ordered list of 4-10 topic strings that break the document into teachable chunks, in the order they should be studied. Each topic should be a short, specific phrase (max 8 words) that can be used to search the document for relevant content."""
 
 
+SUPERVISOR_PROMPT = """You are the Supervisor of an NCERT tutoring system built on LangGraph. You never teach, retrieve content, or grade answers yourself - your only job is to decide the single next action for this turn, given the session state below.
+
+SESSION STATE (JSON):
+{state_summary}
+
+Available next actions today: "teach", "quiz", "feedback". Do not use "revise_prerequisite" or "reflect_retry" - those require a prerequisite map and a Reflection Agent that have not been built yet.
+
+Return a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
+- "next_action": one of "teach", "quiz", "feedback", "complete"
+- "target_topic": the topic this action should focus on (use current_topic unless you have a specific reason to diverge)
+- "reasoning": one or two sentences explaining the decision, grounded in the session state above
+
+Guidance:
+- If mode_requested is "teaching" and teaching_output_already_produced is false, choose "teach".
+- If mode_requested is "quiz" and quiz_questions_generated is 0, choose "quiz".
+- If student_answer_pending is true, choose "feedback".
+- Only choose "complete" if the session state above already shows a genuine stopping point (for example, every quiz question answered with a passing score). Otherwise respect mode_requested."""
+
+
 def render_prompt(template: str, **values: object) -> str:
     rendered = template
     for key, value in values.items():

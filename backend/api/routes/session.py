@@ -18,9 +18,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from agents.document_agent import document_tutor
+from agents.graph import run_session
 from agents.state import LearningState
-from agents.subject_agents import math_agent, science_agent, sst_agent
 from api.curriculum import get_chapter_topics
 from api.db import get_document, load_session, save_session
 from api.models import (
@@ -35,13 +34,6 @@ from api.models import (
 router = APIRouter(prefix="/session", tags=["session"])
 logger = logging.getLogger(__name__)
 
-# Map subject string → agent callable
-_SUBJECT_AGENTS = {
-    "math": math_agent,
-    "science": science_agent,
-    "sst": sst_agent,
-}
-
 _JSON_RETRY_MESSAGE = (
     "Your previous response was not valid JSON. "
     "Return ONLY the JSON object, nothing else."
@@ -49,7 +41,7 @@ _JSON_RETRY_MESSAGE = (
 
 
 # ---------------------------------------------------------------------------
-# Agent invocation helpers
+# Graph invocation helpers
 # ---------------------------------------------------------------------------
 
 
@@ -60,45 +52,33 @@ def _append_retry_message(state: LearningState) -> LearningState:
     return {**state, "messages": messages}
 
 
-async def _invoke_teaching_agent(
-    agent_fn,
-    state: LearningState,
-) -> dict[str, Any]:
+async def _invoke_graph(state: LearningState) -> dict[str, Any]:
     """
-    Run a synchronous subject agent in a thread pool.
+    Run the Supervisor-led LangGraph (agents/graph.py) in a thread pool for one turn.
 
-    Retries once if the agent raises a JSON-related error.
-    Raises HTTP 500 after two failures.
+    The Supervisor decides the next action and the graph dispatches to the
+    matching agent node, returning the full merged LearningState. Retries once
+    if the run raises a JSON-related error.
     """
     try:
-        return await asyncio.to_thread(agent_fn, state)
+        return await asyncio.to_thread(run_session, state)
     except (json.JSONDecodeError, KeyError, ValueError) as first_err:
-        logger.warning("Agent %s first attempt failed: %s", agent_fn.__name__, first_err)
+        logger.warning("Graph run first attempt failed: %s", first_err)
         retry_state = _append_retry_message(state)
         try:
-            return await asyncio.to_thread(agent_fn, retry_state)
+            return await asyncio.to_thread(run_session, retry_state)
         except Exception as second_err:
-            logger.error(
-                "Agent %s failed after retry: %s", agent_fn.__name__, second_err
-            )
+            logger.error("Graph run failed after retry: %s", second_err)
             raise HTTPException(
                 status_code=500,
                 detail="Agent failed to generate valid response. Please try again.",
             )
     except Exception as err:
-        logger.error("Agent %s unexpected error: %s", agent_fn.__name__, err)
+        logger.error("Graph run unexpected error: %s", err)
         raise HTTPException(
             status_code=500,
             detail="Agent failed to generate valid response. Please try again.",
         )
-
-
-def _agent_for_state(state: dict[str, Any]):
-    """Pick the teaching agent for a session: document_tutor for uploaded
-    material, otherwise the NCERT subject agent."""
-    if state.get("document_id"):
-        return document_tutor
-    return _SUBJECT_AGENTS.get(state.get("subject"))
 
 
 def _response_subject(state: dict[str, Any]) -> str:
@@ -138,17 +118,11 @@ async def _reteach_current_topic(
     *,
     user_message: str,
 ) -> TeachingResponse:
-    subject = state["subject"]
-    agent_fn = _agent_for_state(state)
-    if agent_fn is None:
-        raise HTTPException(status_code=400, detail=f"Unsupported subject: {subject}")
-
     reteach_state = _append_user_message(state, user_message)
     reteach_state["mode"] = "teaching"
     reteach_state["teaching_output"] = {}
 
-    updates = await _invoke_teaching_agent(agent_fn, reteach_state)
-    reteach_state = {**reteach_state, **updates}
+    reteach_state = await _invoke_graph(reteach_state)
 
     await save_session(session_id, reteach_state)
 
@@ -195,17 +169,12 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
         if document is None:
             raise HTTPException(status_code=404, detail=f"Document '{body.document_id}' not found.")
 
-        agent_fn = document_tutor
         response_subject = "custom"
         state_subject = "the uploaded material"
         chapter = document["title"]
         all_topics = list(body.custom_topics) or list(document["topics"])
         grade = body.grade or 8
     else:
-        agent_fn = _SUBJECT_AGENTS.get(body.subject)
-        if agent_fn is None:
-            raise HTTPException(status_code=400, detail=f"Unsupported subject: {body.subject}")
-
         response_subject = body.subject
         state_subject = body.subject
         chapter = body.chapter
@@ -247,8 +216,7 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
         "document_id": body.document_id or "",
     }
 
-    updates = await _invoke_teaching_agent(agent_fn, initial_state)
-    state = {**initial_state, **updates}
+    state = await _invoke_graph(initial_state)
 
     await save_session(session_id, state)
 
@@ -319,12 +287,7 @@ async def next_topic(body: NextTopicRequest):
     state["teaching_output"] = {}
     state["retrieved_context"] = []
 
-    agent_fn = _agent_for_state(state)
-    if agent_fn is None:
-        raise HTTPException(status_code=400, detail=f"Unsupported subject: {subject}")
-
-    updates = await _invoke_teaching_agent(agent_fn, state)
-    state = {**state, **updates}
+    state = await _invoke_graph(state)
 
     await save_session(body.session_id, state)
 

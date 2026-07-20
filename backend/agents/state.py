@@ -23,3 +23,5 @@ class LearningState(TypedDict, total=False):
     topics_covered: list[str]
     all_chapter_topics: list[str]
     document_id: str
+    next_action: Literal["teach", "quiz", "feedback", "complete"]
+    supervisor_reasoning: str
