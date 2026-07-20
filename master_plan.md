@@ -11,8 +11,10 @@ Every phase ends with something deployed and working — never a half-migrated s
 
 ---
 
-## Phase 0 — Stabilize the Free Deployment (prerequisite, ~1 day)
+## Phase 0 — Stabilize the Free Deployment ✅ DONE (2026-07-21)
 *Goal: stop fighting infra before touching architecture. Current Render deploy already exceeded memory — fix the foundation first.*
+
+Live on Hugging Face Spaces (Docker) + Vercel, confirmed working. Cleanup while closing out: removed the stale duplicate `backend/Dockerfile` (root `Dockerfile` is the one HF Spaces actually builds), and fixed `.gitignore` (was UTF-16 encoded, which is why the `*.docx` rule had rendered as garbled spaced-out characters — rewritten as plain UTF-8 with the rule corrected).
 
 - Move backend hosting from Render → **Hugging Face Spaces (Docker SDK)**. Free CPU-basic tier gives materially more headroom than Render's 512MB, which is what triggered the HF-embeddings detour in the first place.
 - Add a `Dockerfile` for the Spaces build; confirm FAISS index artifacts (`rag/index/*.faiss`, `*_meta.json`) are either committed or rebuilt on container start — don't let ingestion be a manual local-only step the deployed container can't reproduce.
