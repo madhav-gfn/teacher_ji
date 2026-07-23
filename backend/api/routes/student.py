@@ -12,7 +12,7 @@ from datetime import date
 
 from fastapi import APIRouter, HTTPException
 
-from api.db import get_student, upsert_student
+from api.db import get_student, get_student_memory, upsert_student
 from api.models import StudentProfile, UpdateProfileRequest
 
 router = APIRouter(prefix="/student", tags=["student"])
@@ -37,13 +37,17 @@ async def get_student_profile(student_id: str) -> StudentProfile:
             detail=f"No profile found for student '{student_id}'.",
         )
 
+    memory = await get_student_memory(student_id)
     return StudentProfile(
-        student_id=row["student_id"],
+        student_id=student_id,
         grade=row["grade"],
-        topics_mastered=row.get("topics_mastered", {}),
-        weak_topics=row.get("weak_topics", {}),
-        quiz_history=row.get("quiz_history", []),
-        total_sessions=row.get("total_sessions", 0),
+        learning_style=memory["learning_style"],
+        mastery=memory["mastery"],
+        confidence=memory["confidence"],
+        weak_topics=memory["weak_topics"],
+        revision_due=memory["revision_due"],
+        quiz_history=memory["quiz_history"],
+        total_sessions=memory["total_sessions"],
     )
 
 
@@ -58,56 +62,62 @@ async def update_student_profile(
     body: UpdateProfileRequest,
 ) -> StudentProfile:
     """
-    Merge a completed session's results into the persistent student profile.
+    Merge a completed session's results into the persistent Memory model.
 
-    - Adds mastered_topics to profile['topics_mastered'][subject] (deduped).
-    - Merges weak_topics into profile['weak_topics'][subject] (deduped).
-      Topics that appear in mastered_topics are removed from weak_topics.
-    - Appends a quiz_history entry.
-    - Increments total_sessions.
-    - Upserts to Postgres.
+    This is the coarse, end-of-session counterpart to the per-question rolling
+    updates already applied by `update_mastery_from_feedback` during the quiz
+    (see api/routes/quiz.py:submit_answer) — it reconciles the session's final
+    mastered/weak lists into the same mastery/confidence maps and records the
+    session in quiz_history.
+
+    - mastered_topics push mastery/confidence up and clear weak_topics/revision_due.
+    - weak_topics push mastery down (unless also in mastered_topics) and add to
+      weak_topics/revision_due.
+    - Appends a quiz_history entry, increments total_sessions, upserts to Postgres.
     """
     subject = body.subject.strip().lower()
 
-    # Load existing profile or start fresh
+    # Load existing profile (type-guarded against pre-Phase-1B rows) or start fresh
     existing = await get_student(student_id)
+    profile = await get_student_memory(student_id)
     if existing:
-        profile: dict = dict(existing)
         grade: int = existing["grade"]
     else:
-        profile = {
-            "topics_mastered": {},
-            "weak_topics": {},
-            "quiz_history": [],
-            "total_sessions": 0,
-        }
         # Infer grade from the session request body (UpdateProfileRequest doesn't
         # carry grade, so we'll need to look it up; use a safe default and
         # trust the Postgres record after the first session sets it properly).
         grade = 6  # placeholder — overwritten if we loaded from DB
 
-    topics_mastered: dict[str, list[str]] = profile.get("topics_mastered", {})
-    weak_topics_map: dict[str, list[str]] = profile.get("weak_topics", {})
-    quiz_history: list[dict] = profile.get("quiz_history", [])
+    mastery: dict[str, float] = dict(profile.get("mastery", {}))
+    confidence: dict[str, float] = dict(profile.get("confidence", {}))
+    weak_topics: list[str] = list(profile.get("weak_topics", []))
+    revision_due: list[str] = list(profile.get("revision_due", []))
+    quiz_history: list[dict] = list(profile.get("quiz_history", []))
     total_sessions: int = profile.get("total_sessions", 0)
 
-    # ---- Merge mastered topics ------------------------------------------
-    current_mastered: list[str] = topics_mastered.get(subject, [])
-    for topic in body.mastered_topics:
-        if topic not in current_mastered:
-            current_mastered.append(topic)
-    topics_mastered[subject] = current_mastered
-
-    # ---- Merge weak topics (remove newly mastered ones) -----------------
-    current_weak: list[str] = weak_topics_map.get(subject, [])
     mastered_set = {t.strip().lower() for t in body.mastered_topics}
-    # Add new weak topics not yet mastered
+
+    # ---- Mastered topics: push scores up, clear from weak/revision -------
+    for topic in body.mastered_topics:
+        concept = topic.strip().lower()
+        if not concept:
+            continue
+        mastery[concept] = max(mastery.get(concept, 0.0), 0.9)
+        confidence[concept] = max(confidence.get(concept, 0.0), 0.9)
+    weak_topics = [t for t in weak_topics if t not in mastered_set]
+    revision_due = [t for t in revision_due if t not in mastered_set]
+
+    # ---- Weak topics: push scores down, flag for revision -----------------
     for topic in body.weak_topics:
-        if topic.strip().lower() not in mastered_set and topic not in current_weak:
-            current_weak.append(topic)
-    # Remove any topic now mastered
-    current_weak = [t for t in current_weak if t.strip().lower() not in mastered_set]
-    weak_topics_map[subject] = current_weak
+        concept = topic.strip().lower()
+        if not concept or concept in mastered_set:
+            continue
+        mastery[concept] = min(mastery.get(concept, 0.5), 0.4)
+        confidence[concept] = min(confidence.get(concept, 0.5), 0.4)
+        if concept not in weak_topics:
+            weak_topics.append(concept)
+        if concept not in revision_due:
+            revision_due.append(concept)
 
     # ---- Quiz history entry --------------------------------------------
     quiz_history.append(
@@ -122,8 +132,11 @@ async def update_student_profile(
     total_sessions += 1
 
     updated_profile = {
-        "topics_mastered": topics_mastered,
-        "weak_topics": weak_topics_map,
+        "learning_style": profile["learning_style"],
+        "mastery": mastery,
+        "confidence": confidence,
+        "weak_topics": weak_topics,
+        "revision_due": revision_due,
         "quiz_history": quiz_history,
         "total_sessions": total_sessions,
     }
@@ -139,8 +152,11 @@ async def update_student_profile(
     return StudentProfile(
         student_id=student_id,
         grade=grade,
-        topics_mastered=topics_mastered,
-        weak_topics=weak_topics_map,
+        learning_style=updated_profile["learning_style"],
+        mastery=mastery,
+        confidence=confidence,
+        weak_topics=weak_topics,
+        revision_due=revision_due,
         quiz_history=quiz_history,
         total_sessions=total_sessions,
     )
