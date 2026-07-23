@@ -8,6 +8,8 @@ NCERT CONTEXT:
 CHAPTER: {chapter}
 TOPIC: {topic}
 STUDENT GRADE: {grade}
+STUDENT LEARNING PROFILE: {student_memory}
+Adapt to this profile: if this topic's mastery is low or it appears in weak_topics/revision_due, slow down and add an extra scaffolding step before the main explanation. If learning_style is "visual", lean harder on the analogy and worked example being visually describable.
 
 Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, bold syntax, comments, or unquoted values anywhere:
 - "headline": A plain string summarizing the core concept (max 15 words)
@@ -28,6 +30,8 @@ NCERT CONTEXT:
 CHAPTER: {chapter}
 TOPIC: {topic}
 STUDENT GRADE: {grade}
+STUDENT LEARNING PROFILE: {student_memory}
+Adapt to this profile: if this topic's mastery is low or it appears in weak_topics/revision_due, slow down and add an extra scaffolding step before the main explanation. If learning_style is "visual", make the diagram_description richer and more central to the explanation.
 
 Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
 - "headline": The single most important idea from this topic (max 15 words)
@@ -46,6 +50,8 @@ NCERT CONTEXT:
 CHAPTER: {chapter}
 TOPIC: {topic}
 STUDENT GRADE: {grade}
+STUDENT LEARNING PROFILE: {student_memory}
+Adapt to this profile: if this topic's mastery is low or it appears in weak_topics/revision_due, slow down and add an extra scaffolding step before the main narrative. If learning_style is "visual", lean harder on the timeline and mnemonic being visually memorable.
 
 Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
 - "headline": The single most important fact or idea (max 15 words)
@@ -105,6 +111,8 @@ DOCUMENT CONTEXT:
 DOCUMENT: {chapter}
 TOPIC: {topic}
 STUDENT GRADE/LEVEL: {grade}
+STUDENT LEARNING PROFILE: {student_memory}
+Adapt to this profile: if this topic's mastery is low or it appears in weak_topics/revision_due, slow down and add an extra scaffolding step before the main explanation.
 
 Your response must be a syntactically valid JSON object with exactly these keys. Do not use markdown, bold syntax, comments, or unquoted values anywhere:
 - "headline": A plain string summarizing the core idea of this topic (max 15 words)
@@ -141,6 +149,8 @@ Return a syntactically valid JSON object with exactly these keys. Do not use mar
 - "next_action": one of "teach", "quiz", "feedback", "complete"
 - "target_topic": the topic this action should focus on (use current_topic unless you have a specific reason to diverge)
 - "reasoning": one or two sentences explaining the decision, grounded in the session state above
+
+The session state's `student_memory` field is the student's persistent learning profile (mastery/confidence per concept, weak topics and topics due for revision, learning style) — it was loaded once at session start and reflects this student's history from before this turn. Use it to ground your reasoning (e.g. explain why a topic needs a gentler pass because the student's mastery on it is low), even though today's action set can't yet reroute to a prerequisite topic.
 
 Guidance:
 - If mode_requested is "teaching" and teaching_output_already_produced is false, choose "teach".
