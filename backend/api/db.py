@@ -152,6 +152,152 @@ async def get_student(student_id: str) -> dict[str, Any] | None:
     return profile
 
 
+# ---------------------------------------------------------------------------
+# Memory model (Phase 1B) — structured, per-concept learner profile.
+#
+# Shape (see archie.md "Student Knowledge Model"):
+#   {
+#     "learning_style": "visual",
+#     "mastery": {"division": 0.42, "fractions": 0.81},
+#     "confidence": {"division": 0.39, "fractions": 0.84},
+#     "weak_topics": ["division"],
+#     "revision_due": ["fractions"],
+#     "quiz_history": [...],
+#     "total_sessions": 0,
+#   }
+#
+# mastery/confidence are per-concept rolling scores in [0, 1], updated after
+# every feedback_agent call (quiz correctness) and every re-explanation
+# request — never only at session end.
+# ---------------------------------------------------------------------------
+
+DEFAULT_MEMORY: dict[str, Any] = {
+    "learning_style": "text",
+    "mastery": {},
+    "confidence": {},
+    "weak_topics": [],
+    "revision_due": [],
+    "quiz_history": [],
+    "total_sessions": 0,
+}
+
+_MASTERY_ALPHA = 0.3  # EMA weight given to the newest signal
+_WEAK_TOPIC_THRESHOLD = 0.5
+_MASTERED_THRESHOLD = 0.75
+_REVISION_DUE_THRESHOLD = 0.8
+
+_CONCEPT_STRENGTH_SCORE = {
+    "mastered": 1.0,
+    "developing": 0.6,
+    "needs_revision": 0.2,
+}
+
+
+def _normalize_concept(concept: str) -> str:
+    return concept.strip().lower()
+
+
+_MEMORY_FIELD_TYPES: dict[str, type] = {
+    "learning_style": str,
+    "mastery": dict,
+    "confidence": dict,
+    "weak_topics": list,
+    "revision_due": list,
+    "quiz_history": list,
+    "total_sessions": int,
+}
+
+
+async def get_student_memory(student_id: str) -> dict[str, Any]:
+    """Load the student's persistent Memory model, filled in with defaults for
+    any field never written (new student, or a profile predating Phase 1B —
+    where e.g. weak_topics was a subject-keyed dict rather than a flat list)."""
+    existing = await get_student(student_id) or {}
+    memory = dict(DEFAULT_MEMORY)
+    for key, expected_type in _MEMORY_FIELD_TYPES.items():
+        value = existing.get(key)
+        if isinstance(value, expected_type):
+            memory[key] = value
+    return memory
+
+
+def _recompute_topic_lists(memory: dict[str, Any]) -> None:
+    """Derive weak_topics / revision_due from the current mastery map so they
+    never drift out of sync with the scores that drove them."""
+    mastery: dict[str, float] = memory["mastery"]
+    weak_topics = [t for t in memory.get("weak_topics", []) if mastery.get(t, 0.0) < _MASTERED_THRESHOLD]
+    for concept, score in mastery.items():
+        if score < _WEAK_TOPIC_THRESHOLD and concept not in weak_topics:
+            weak_topics.append(concept)
+    memory["weak_topics"] = weak_topics
+
+    revision_due = [t for t in memory.get("revision_due", []) if mastery.get(t, 0.0) < _REVISION_DUE_THRESHOLD]
+    memory["revision_due"] = revision_due
+
+
+async def update_mastery_from_feedback(
+    student_id: str,
+    grade: int,
+    concept: str,
+    is_correct: bool,
+    concept_strength: str,
+) -> dict[str, Any]:
+    """Roll a quiz answer's outcome into the student's persistent mastery/confidence
+    for `concept`, using an exponential moving average so recent performance
+    dominates without discarding history. Called after every feedback_agent turn."""
+    concept = _normalize_concept(concept)
+    if not concept:
+        return await get_student_memory(student_id)
+
+    memory = await get_student_memory(student_id)
+    mastery: dict[str, float] = dict(memory["mastery"])
+    confidence: dict[str, float] = dict(memory["confidence"])
+
+    correctness_signal = 1.0 if is_correct else 0.0
+    prior_mastery = float(mastery.get(concept, 0.5))
+    mastery[concept] = round(prior_mastery * (1 - _MASTERY_ALPHA) + correctness_signal * _MASTERY_ALPHA, 4)
+
+    strength_signal = _CONCEPT_STRENGTH_SCORE.get(concept_strength, 0.5)
+    prior_confidence = float(confidence.get(concept, 0.5))
+    confidence[concept] = round(prior_confidence * (1 - _MASTERY_ALPHA) + strength_signal * _MASTERY_ALPHA, 4)
+
+    memory["mastery"] = mastery
+    memory["confidence"] = confidence
+    if concept_strength == "needs_revision" and concept not in memory["revision_due"]:
+        memory["revision_due"].append(concept)
+    _recompute_topic_lists(memory)
+
+    await upsert_student(student_id, grade, memory)
+    return memory
+
+
+async def apply_reexplanation_signal(student_id: str, grade: int, topic: str) -> dict[str, Any]:
+    """A student asking for the same topic to be re-explained is itself a weak-
+    understanding signal, independent of any quiz answer — nudge mastery/confidence
+    down and flag the topic for revision."""
+    concept = _normalize_concept(topic)
+    if not concept:
+        return await get_student_memory(student_id)
+
+    memory = await get_student_memory(student_id)
+    mastery: dict[str, float] = dict(memory["mastery"])
+    confidence: dict[str, float] = dict(memory["confidence"])
+
+    prior_mastery = float(mastery.get(concept, 0.5))
+    mastery[concept] = round(prior_mastery * (1 - _MASTERY_ALPHA) + 0.3 * _MASTERY_ALPHA, 4)
+    prior_confidence = float(confidence.get(concept, 0.5))
+    confidence[concept] = round(prior_confidence * (1 - _MASTERY_ALPHA) + 0.3 * _MASTERY_ALPHA, 4)
+
+    memory["mastery"] = mastery
+    memory["confidence"] = confidence
+    if concept not in memory["revision_due"]:
+        memory["revision_due"].append(concept)
+    _recompute_topic_lists(memory)
+
+    await upsert_student(student_id, grade, memory)
+    return memory
+
+
 async def upsert_student(student_id: str, grade: int, profile: dict[str, Any]) -> None:
     if pg_pool is None:
         raise RuntimeError("Postgres pool not initialised.")
