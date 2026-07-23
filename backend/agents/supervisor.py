@@ -76,6 +76,21 @@ def _fallback_action(state: LearningState) -> tuple[str, str]:
     return "complete", f"Deterministic fallback: unrecognized mode {mode!r}."
 
 
+def _student_memory_summary(state: LearningState) -> dict:
+    """Phase 1B: the student's persistent Memory model, loaded once at
+    session/start (see api/routes/session.py) and surfaced to the Supervisor
+    on every turn so decisions account for prior mastery, not just this
+    session's in-progress score."""
+    memory = state.get("student_memory") or {}
+    return {
+        "learning_style": memory.get("learning_style", "text"),
+        "mastery": memory.get("mastery", {}),
+        "confidence": memory.get("confidence", {}),
+        "persistent_weak_topics": memory.get("weak_topics", []),
+        "revision_due": memory.get("revision_due", []),
+    }
+
+
 def _state_summary(state: LearningState) -> str:
     quiz_questions = state.get("quiz_questions", [])
     summary = {
@@ -92,6 +107,7 @@ def _state_summary(state: LearningState) -> str:
         "quiz_questions_answered": sum(1 for q in quiz_questions if q.get("evaluation")),
         "student_answer_pending": bool(state.get("student_answer")),
         "using_uploaded_document": bool(state.get("document_id")),
+        "student_memory": _student_memory_summary(state),
     }
     return json.dumps(summary, ensure_ascii=False)
 
