@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException
 from agents.graph import run_session
 from agents.state import LearningState
 from api.curriculum import get_chapter_topics
-from api.db import get_document, load_session, save_session
+from api.db import apply_reexplanation_signal, get_document, get_student_memory, load_session, save_session
 from api.models import (
     ChapterCompleteResponse,
     ExplainDifferentlyRequest,
@@ -117,10 +117,19 @@ async def _reteach_current_topic(
     state: dict[str, Any],
     *,
     user_message: str,
+    is_reexplanation_request: bool = False,
 ) -> TeachingResponse:
     reteach_state = _append_user_message(state, user_message)
     reteach_state["mode"] = "teaching"
     reteach_state["teaching_output"] = {}
+
+    if is_reexplanation_request:
+        updated_memory = await apply_reexplanation_signal(
+            reteach_state["student_id"],
+            reteach_state["grade"],
+            reteach_state["topic"],
+        )
+        reteach_state["student_memory"] = updated_memory
 
     reteach_state = await _invoke_graph(reteach_state)
 
@@ -194,6 +203,11 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
     if topic not in all_topics:
         all_topics = [topic, *all_topics]
 
+    # Phase 1B Memory Agent: load the student's persistent learning profile once
+    # per session and carry it in state so every Supervisor/Learning Agent turn
+    # for this session sees it (see agents/supervisor.py, agents/subject_agents.py).
+    student_memory = await get_student_memory(body.student_id)
+
     initial_state: LearningState = {
         "student_id": body.student_id,
         "grade": grade,
@@ -214,6 +228,7 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
         "topics_covered": [],
         "all_chapter_topics": all_topics,
         "document_id": body.document_id or "",
+        "student_memory": student_memory,
     }
 
     state = await _invoke_graph(initial_state)
@@ -327,4 +342,5 @@ async def explain_differently(body: ExplainDifferentlyRequest) -> TeachingRespon
             "Re-explain the same topic in a different way.\n"
             f"Student guidance: {body.hint}"
         ),
+        is_reexplanation_request=True,
     )
