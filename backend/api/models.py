@@ -158,15 +158,27 @@ class QuizHistoryEntry(BaseModel):
 
 
 class StudentProfile(BaseModel):
+    """The Phase 1B Memory model — a structured, per-concept learner profile
+    (see archie.md "Student Knowledge Model"), not just a session log."""
+
     student_id: str
     grade: int = Field(ge=6, le=8)
-    topics_mastered: dict[str, list[str]] = Field(
+    learning_style: str = Field(default="text")
+    mastery: dict[str, float] = Field(
         default_factory=dict,
-        description="subject → list of mastered topic strings",
+        description="concept → rolling mastery score in [0, 1]",
     )
-    weak_topics: dict[str, list[str]] = Field(
+    confidence: dict[str, float] = Field(
         default_factory=dict,
-        description="subject → list of weak topic strings",
+        description="concept → rolling confidence score in [0, 1]",
+    )
+    weak_topics: list[str] = Field(
+        default_factory=list,
+        description="concepts currently below the mastery threshold",
+    )
+    revision_due: list[str] = Field(
+        default_factory=list,
+        description="concepts flagged needs_revision that haven't recovered yet",
     )
     quiz_history: list[QuizHistoryEntry] = Field(default_factory=list)
     total_sessions: int = Field(default=0, ge=0)
