@@ -29,15 +29,23 @@ Live on Hugging Face Spaces (Docker) + Vercel, confirmed working. Cleanup while 
 ## Phase 1 — The True Agentic Core (highest priority, ~5-7 days)
 *Goal: this is the phase that actually changes the project's grade. Everything else is packaging around this.*
 
-### 1A. Supervisor node (replaces the if/else router)
+### 1A. Supervisor node (replaces the if/else router) ✅ DONE (2026-07-25)
 
-Today, `route_from_orchestrator()` in `orchestrator.py` is pure Python — it never asks a model anything, it just switches on a `mode` string. That's the single biggest reason this reads as "RAG with routing," not agentic AI.
+The LLM decision node (`agents/supervisor.py:supervisor_node`, `llama-3.1-8b-instant`) predates this log entry — it was already live when 1B started. What was missing until now was the `revise_prerequisite` action from the original spec, which needed 1C's prerequisite map and a Memory-model-aware eligibility check to mean anything; it's now wired in.
 
-Replace it with an LLM decision node:
-- Model: `llama-3.1-8b-instant` (fast/cheap — this call happens on every turn, so it shouldn't be the 70B model).
-- Input: current `LearningState` + the student's Memory model (1B below) + relevant prerequisite edges (1C).
+`_prerequisite_summary(state)` looks up `api/prerequisites.get_prerequisites(subject, topic)` for the current topic and annotates each prerequisite with this student's mastery (from the Phase 1B Memory model) and whether it's already been revised this session (`state["revised_prerequisites"]`), feeding it to the Supervisor as `prerequisites_for_current_topic` in `_state_summary`. The Supervisor may choose `"revise_prerequisite"` with a `target_topic`, but that choice is never trusted blindly: `_eligible_prerequisite_topics` computes the actual set of valid redirect targets (known numeric mastery below 0.5, not already revised this session) and `supervisor_node` silently downgrades to `"teach"` if the LLM's chosen target isn't in that set — covers a hallucinated topic, an unassessed ("unknown") prerequisite, an already-revised one, or a document-upload session (no curriculum, no prerequisites, always downgraded). `route_from_supervisor` sends `"revise_prerequisite"` to the same subject-agent node as `"teach"`; `subject_agents.py:_run_subject_agent` reads `target_topic` instead of `topic` when redirected, teaches that instead, and appends it to `revised_prerequisites` so the same turn's redirect can't loop.
+
+`reflect_retry` from the original spec was deliberately **not** added as a Supervisor action — Phase 1D superseded it with a simpler design: the bounded retry is a graph-edge loop internal to the Reflection Agent (`route_from_reflection`), not a decision the Supervisor makes each turn.
+
+One non-obvious fix this required: `target_topic` was being returned by `supervisor_node` since 1A originally shipped but was **never declared in the `LearningState` TypedDict** (`agents/state.py`) — LangGraph only persists schema-declared keys across graph steps, so it was silently evaporating by the time a later node read it back. Harmless before (nothing depended on it surviving), but it broke `revise_prerequisite` outright until caught by a mocked-graph test and fixed by adding `target_topic: str` to the schema.
+
+A second correctness gap surfaced in the API layer: `session.py`'s responses and topic-progression bookkeeping (`start_session`/`next_topic`/`_reteach_current_topic`) always assumed the topic taught this turn was the one requested. A redirect breaks that assumption twice over - the response would mislabel a Division refresher as "Fractions," and marking the *requested* topic "covered" would silently skip ever actually teaching it. Fixed with `_was_redirected_to_prerequisite`/`_actually_taught_topic`/`_covered_topics_for_state` in `session.py`, which compare `target_topic` against the requested topic rather than checking `next_action` (which is overwritten to `"complete"` as the turn's terminal action by the time the graph returns, regardless of whether a redirect happened mid-turn - not a usable signal from the API layer).
+
+Verified with mocked-Groq tests: a confirmed low-mastery, not-yet-revised prerequisite triggers the redirect, gets taught, and is recorded; a repeat request in the same session does not loop back into it; a hallucinated topic, an unassessed prerequisite, and a document-upload session all correctly fall back to plain "teach" rather than trusting the LLM's choice.
+
+Original spec:
+- Input: current `LearningState` + the student's Memory model (1B) + relevant prerequisite edges (1C).
 - Output: strict JSON — `{"next_action": "teach" | "revise_prerequisite" | "quiz" | "reflect_retry" | "complete", "target_topic": str, "reasoning": str}`.
-- `graph.py`'s conditional edges now branch on `next_action` from the Supervisor's *reasoning*, not a client-supplied `mode` string. The mode field becomes an input signal, not the sole router.
 
 ### 1B. Memory Agent (fixes "each session starts fresh") ✅ DONE (2026-07-22)
 
@@ -66,7 +74,7 @@ Built with Groq native tool-calling (`tools=`/`tool_calls`, OpenAI-compatible su
 
 `get_prerequisites(topic)` is backed by a new static map, `api/prerequisites.py` (mirrors `curriculum.py`'s plain-nested-dict convention, same case-insensitive/substring lookup style), covering the topics that actually exist in `NCERT_CURRICULUM` across math/science/sst plus a few canonical aliases (e.g. "percentages") a student might name directly. `python_calculator(expression)` is an AST-walking evaluator (`agents/tools.py:_eval_node`) whitelisting only numeric constants, `+ - * / // % **`, unary +/-, and `abs/round/min/max/sqrt` calls — verified it rejects `__import__(...)`-style injection attempts and handles division-by-zero without raising.
 
-Known gaps, carried forward: the Supervisor doesn't yet branch on `get_prerequisites` results (that's Phase 1A's `revise_prerequisite` action, still not wired — the Supervisor prompt still explicitly tells the model not to use it); tools aren't independently traceable as LangGraph nodes/edges, only as an in-node loop, so Phase 4's LangSmith tracing will see them as nested tool-call messages rather than graph steps unless that's revisited; no automated tests were added (repo still has zero pytest — verification here was manual: unit-checked the calculator/prerequisite lookups directly, then confirmed the tool-calling loop actually round-trips against the live Groq API and a real FAISS index, though the final live run hit an expired `GROQ_API_KEY` in `.env` rather than a code issue).
+Known gaps, carried forward: tools aren't independently traceable as LangGraph nodes/edges, only as an in-node loop, so Phase 4's LangSmith tracing will see them as nested tool-call messages rather than graph steps unless that's revisited; no automated tests were added (repo still has zero pytest — verification here was manual: unit-checked the calculator/prerequisite lookups directly, then confirmed the tool-calling loop actually round-trips against the live Groq API and a real FAISS index, though the final live run hit an expired `GROQ_API_KEY` in `.env` rather than a code issue). (The Supervisor not branching on `get_prerequisites` was also listed here originally — that's now closed, see 1A above.)
 
 Previously `math_agent`/`science_agent`/`sst_agent` always did one fixed retrieval + one Groq call — no decision was ever made about *how* to answer. Give them real tool choice (Groq tool-calling or a LangGraph `ToolNode`):
 
