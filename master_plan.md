@@ -78,8 +78,17 @@ Previously `math_agent`/`science_agent`/`sst_agent` always did one fixed retriev
 
 *(`generate_diagram` deferred to a later phase — lower interview impact than the three above, per your call.)*
 
-### 1D. Reflection Agent — teaching output only
+### 1D. Reflection Agent — teaching output only ✅ DONE (2026-07-25)
 
+Built as a new graph node, `agents/reflection.py:reflection_agent`, sitting between the subject agents and the Supervisor (`math_agent`/`science_agent`/`sst_agent` → `reflection_agent` → Supervisor, per the mermaid diagram below). Uses `llama-3.1-8b-instant` (`REFLECTION_MODEL`) with a dedicated `REFLECTION_PROMPT` (`agents/prompts.py`) that checks all three things the plan called for — grounded in `retrieved_context`, curriculum-appropriate for the grade, and paced right per the student's Memory model — and returns `{"passed", "grounded", "curriculum_appropriate", "right_difficulty", "critique"}`.
+
+On failure, `route_from_reflection` routes back to whichever subject agent produced the output (tracked via a new `teaching_agent` state field) exactly once — `reflection_retry_count` caps it, and the critique is appended as an extra user turn in `_run_subject_agent`'s conversation (`agents/subject_agents.py`) so the retried agent sees exactly what to fix, tools included (it may call `search_ncert`/`get_prerequisites`/`python_calculator` again on the retry). A second failure is accepted anyway rather than looping — verified with a mocked-Groq test that reflection is called exactly twice and the graph still terminates cleanly. Quiz generation and feedback scoring skip reflection entirely, as decided — `quiz_generator`/`feedback_agent`/`document_tutor` route straight to the Supervisor, unchanged.
+
+Two deliberate guardrails beyond the plan's literal wording: (1) if `retrieved_context` is empty (the subject agent's canned "NCERT context not found" safety response, from 1C), reflection is skipped entirely with zero LLM calls — there's nothing real to audit and no point spending a call on it; (2) if the reflection call itself throws (bad JSON, API error), it fails open and accepts the teaching output rather than blocking the turn — reflection is a quality gate, not a hard dependency. Verified all three paths (retry-then-accept, no-context skip, fail-twice force-accept) with a mocked Groq client, since the actual `GROQ_API_KEY` in `.env` is currently expired.
+
+Known gap, carried forward: `document_tutor` (the generic uploaded-document tutor) intentionally does not go through reflection — the plan's language and diagram both scope this to the three NCERT subject agents, so it was left on its original eager-retrieval path from before 1C.
+
+Original spec:
 - After a subject agent produces `teaching_output`, one cheap `llama-3.1-8b-instant` call checks: is this grounded in the retrieved chunks, curriculum-appropriate for the grade, and at the right difficulty per the student's Memory model?
 - Fail → one bounded retry of the subject agent with the critique appended to the prompt. No infinite loop; cap at 1 retry to control latency/cost.
 - Quiz generation and feedback scoring **skip** reflection — this halves the extra-call cost relative to reflecting everything, per your decision.
