@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from agents.graph import run_session
 from agents.state import LearningState
-from api.db import load_session, save_session
+from api.db import load_session, save_session, update_mastery_from_feedback
 from api.models import (
     FeedbackResponse,
     QuizResponse,
@@ -153,11 +153,25 @@ async def submit_answer(body: SubmitAnswerRequest) -> FeedbackResponse:
     answered_question = questions[question_index]
     concept_tested: str = str(answered_question.get("concept_tested", "")).strip()
     concept_strength: str = feedback_out.get("concept_strength", "")
+    is_correct: bool = bool(feedback_out.get("is_correct", False))
 
     weak_topics: list[str] = list(state.get("weak_topics", []))
     if concept_tested and concept_strength == "mastered":
         weak_topics = [t for t in weak_topics if t.strip().lower() != concept_tested.lower()]
         state["weak_topics"] = weak_topics
+
+    # Phase 1B Memory Agent: roll this answer's outcome into the student's
+    # persistent mastery/confidence model — computed after every feedback_agent
+    # call, not just at session end — and refresh the session's in-memory copy
+    # so the next Supervisor/Learning Agent turn in this session sees it.
+    if concept_tested:
+        state["student_memory"] = await update_mastery_from_feedback(
+            state["student_id"],
+            state["grade"],
+            concept_tested,
+            is_correct,
+            concept_strength,
+        )
 
     # Restore to quiz mode so the Supervisor sees a consistent state on the next turn
     state["mode"] = "quiz"
