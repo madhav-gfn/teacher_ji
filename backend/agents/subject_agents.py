@@ -5,7 +5,6 @@ import os
 import time
 
 from groq import APIStatusError, Groq, RateLimitError
-from rag.retriever import retrieve
 
 from .prompts import (
     MATH_AGENT_PROMPT,
@@ -14,8 +13,12 @@ from .prompts import (
     render_prompt,
 )
 from .state import LearningState
+from .tools import TOOL_SPECS, execute_tool_call
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+TEACHING_MODEL = "llama-3.3-70b-versatile"
+MAX_TOOL_ITERATIONS = 4
 
 
 def call_groq_with_retry(client, model, system_prompt, user_message, max_attempts=3):
@@ -184,62 +187,148 @@ def _retrieval_query(state: LearningState) -> str:
     return f"{topic}. {user_request}"
 
 
-def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: str) -> LearningState:
-    retrieved_context = retrieve(
-        _retrieval_query(state),
-        state["subject"],
-        state["grade"],
-        state["chapter"],
-        top_k=5,
-    )
-    if not retrieved_context:
-        fallback_query = (
-            f"{state.get('chapter', '')}. {state.get('topic', '')}. "
-            f"{_retrieval_query(state)}"
-        )
-        retrieved_context = retrieve(
-            fallback_query,
-            state["subject"],
-            state["grade"],
-            chapter=None,
-            top_k=5,
-        )
+def _create_completion(max_attempts: int = 3, **kwargs):
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except (RateLimitError, APIStatusError) as exc:
+            last_exc = exc
+            print(f"Retry {attempt}/{max_attempts}: API error - {exc}")
+            if attempt < max_attempts:
+                time.sleep(2)
+    raise last_exc
 
-    context = _format_context(retrieved_context)
-    if not retrieved_context:
-        teaching_output = _no_context_output(
-            state["subject"],
-            state.get("chapter", ""),
-            state.get("topic", ""),
-        )
-        messages = list(state.get("messages", []))
-        messages.append(
+
+def _assistant_tool_call_message(message, tool_calls) -> dict:
+    return {
+        "role": "assistant",
+        "content": message.content or "",
+        "tool_calls": [
             {
-                "role": "assistant",
-                "name": agent_name,
-                "content": teaching_output,
+                "id": tool_call.id,
+                "type": "function",
+                "function": {
+                    "name": tool_call.function.name,
+                    "arguments": tool_call.function.arguments,
+                },
             }
+            for tool_call in tool_calls
+        ],
+    }
+
+
+def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
+    seen: set[tuple] = set()
+    deduped: list[dict] = []
+    for chunk in chunks:
+        key = (chunk.get("chapter_title"), chunk.get("page_start"), chunk.get("text"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(chunk)
+    return deduped
+
+
+def _finalize_json(conversation: list[dict], model: str, max_attempts: int = 3) -> dict:
+    """Force a final JSON answer once tool use is done - used both to close out
+    the loop normally and to repair a non-JSON final message."""
+    for attempt in range(1, max_attempts + 1):
+        response = _create_completion(
+            model=model,
+            messages=conversation,
+            temperature=0.1,
+            tools=TOOL_SPECS,
+            tool_choice="none",
         )
-        return {
-            "retrieved_context": retrieved_context,
-            "teaching_output": teaching_output,
-            "messages": messages,
-        }
+        raw = response.choices[0].message.content or ""
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            print(f"Retry {attempt}/{max_attempts}: JSON parse failed")
+            conversation.append({"role": "assistant", "content": raw})
+            conversation.append(
+                {
+                    "role": "user",
+                    "content": "That was not valid JSON. Return ONLY one valid JSON object now. No markdown, no tool calls, no extra text.",
+                }
+            )
+    raise RuntimeError("Agent failed to produce valid JSON after tool use.")
+
+
+def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: str) -> LearningState:
+    subject = state["subject"]
+    grade = state["grade"]
+    chapter = state.get("chapter", "")
+    topic = state.get("topic", "")
 
     system_prompt = render_prompt(
         prompt_template,
-        grade=state["grade"],
-        context=context,
-        chapter=state["chapter"],
-        topic=state["topic"],
-        student_memory=_format_student_memory(state, state["topic"]),
+        grade=grade,
+        chapter=chapter,
+        topic=topic,
+        student_memory=_format_student_memory(state, topic),
     )
-    teaching_output = call_groq_with_retry(
-        client,
-        "llama-3.3-70b-versatile",
-        system_prompt,
-        _build_user_message(state),
-    )
+    conversation: list[dict] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": _build_user_message(state)},
+    ]
+
+    retrieved_context: list[dict] = []
+    teaching_output: dict | None = None
+
+    for _ in range(MAX_TOOL_ITERATIONS):
+        response = _create_completion(
+            model=TEACHING_MODEL,
+            messages=conversation,
+            tools=TOOL_SPECS,
+            tool_choice="auto",
+            temperature=0.1,
+        )
+        message = response.choices[0].message
+        tool_calls = message.tool_calls or []
+
+        if not tool_calls:
+            raw = message.content or ""
+            try:
+                teaching_output = json.loads(raw)
+            except json.JSONDecodeError:
+                conversation.append({"role": "assistant", "content": raw})
+                conversation.append(
+                    {
+                        "role": "user",
+                        "content": "That was not valid JSON. Return ONLY one valid JSON object now. No markdown, no tool calls, no extra text.",
+                    }
+                )
+                teaching_output = _finalize_json(conversation, TEACHING_MODEL)
+            break
+
+        conversation.append(_assistant_tool_call_message(message, tool_calls))
+        for tool_call in tool_calls:
+            result, chunks = execute_tool_call(tool_call, subject=subject, grade=grade, chapter=chapter)
+            retrieved_context.extend(chunks)
+            conversation.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                }
+            )
+    else:
+        conversation.append(
+            {
+                "role": "user",
+                "content": "You have used enough tools. Respond now with ONLY the final JSON object.",
+            }
+        )
+        teaching_output = _finalize_json(conversation, TEACHING_MODEL)
+
+    retrieved_context = _dedupe_chunks(retrieved_context)
+    if not retrieved_context:
+        # Grounding guarantee: never present teaching content that wasn't
+        # actually backed by a search_ncert result, even if the model tried
+        # to skip calling it.
+        teaching_output = _no_context_output(subject, chapter, topic)
 
     messages = list(state.get("messages", []))
     messages.append(
