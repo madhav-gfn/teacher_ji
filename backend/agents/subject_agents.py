@@ -297,7 +297,8 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
     ]
 
     reflection = state.get("teaching_reflection") or {}
-    if reflection.get("critique"):
+    is_reflection_retry = bool(reflection.get("critique"))
+    if is_reflection_retry:
         conversation.append(
             {
                 "role": "user",
@@ -309,17 +310,53 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
             }
         )
 
-    retrieved_context: list[dict] = []
+    # On a reflection-triggered retry, keep whatever this same turn already
+    # retrieved successfully rather than starting from zero - a rocky
+    # tool-calling round on the retry (see the malformed-tool-call recovery
+    # below) must not throw away real context the first attempt already got.
+    retrieved_context: list[dict] = list(state.get("retrieved_context", [])) if is_reflection_retry else []
     teaching_output: dict | None = None
+    tool_call_recovery_attempted = False
 
     for _ in range(MAX_TOOL_ITERATIONS):
-        response = _create_completion(
-            model=TEACHING_MODEL,
-            messages=conversation,
-            tools=TOOL_SPECS,
-            tool_choice="auto",
-            temperature=0.1,
-        )
+        try:
+            # max_attempts=1: Groq/llama-3.3-70b-versatile occasionally emits a
+            # malformed function-call token (seen live, e.g. a stray space in
+            # `<function=search_ncert {...}>`) that its own server-side
+            # validation then rejects with a 400. Retrying with the *same*
+            # messages just reproduces it near-deterministically at this
+            # temperature, so don't burn attempts here - handle it below with
+            # an actual corrective nudge instead.
+            response = _create_completion(
+                max_attempts=1,
+                model=TEACHING_MODEL,
+                messages=conversation,
+                tools=TOOL_SPECS,
+                tool_choice="auto",
+                temperature=0.1,
+            )
+        except (RateLimitError, APIStatusError) as exc:
+            if not tool_call_recovery_attempted:
+                tool_call_recovery_attempted = True
+                print(f"Tool call malformed ({exc}); nudging the model to retry it properly.")
+                conversation.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your last tool call was malformed and rejected by the API. "
+                            "Call the tool again using the real function-calling mechanism "
+                            "only - never write the call as literal text in your response."
+                        ),
+                    }
+                )
+                continue
+            # Already gave it one real chance to fix its own malformed call -
+            # stop trying to call more tools and force a final answer from
+            # whatever context was gathered so far (tool_choice="none" below
+            # shouldn't hit the same failure mode).
+            print(f"Tool call failed again after a corrective retry ({exc}); forcing a final JSON answer instead.")
+            teaching_output = _finalize_json(conversation, TEACHING_MODEL)
+            break
         message = response.choices[0].message
         tool_calls = message.tool_calls or []
 

@@ -175,21 +175,29 @@ def execute_tool_call(tool_call, *, subject: str, grade: int, chapter: str) -> t
     except json.JSONDecodeError:
         arguments = {}
 
-    if name == "search_ncert":
-        chunks = search_ncert(
-            subject,
-            grade,
-            arguments.get("query", ""),
-            arguments.get("chapter") or chapter or None,
-        )
-        if chunks:
-            return {"chunks": chunks}, chunks
-        return {"chunks": [], "note": "No matching NCERT content found for this query."}, []
+    try:
+        if name == "search_ncert":
+            chunks = search_ncert(
+                subject,
+                grade,
+                arguments.get("query", ""),
+                arguments.get("chapter") or chapter or None,
+            )
+            if chunks:
+                return {"chunks": chunks}, chunks
+            return {"chunks": [], "note": "No matching NCERT content found for this query."}, []
 
-    if name == "get_prerequisites":
-        return get_prerequisites(subject, arguments.get("topic", "")), []
+        if name == "get_prerequisites":
+            return get_prerequisites(subject, arguments.get("topic", "")), []
 
-    if name == "python_calculator":
-        return python_calculator(arguments.get("expression", "")), []
+        if name == "python_calculator":
+            return python_calculator(arguments.get("expression", "")), []
 
-    return {"error": f"Unknown tool '{name}'."}, []
+        return {"error": f"Unknown tool '{name}'."}, []
+    except Exception as exc:
+        # A tool's own execution can fail transiently - e.g. the embedding API
+        # search_ncert depends on timing out or returning a 5xx. Report that
+        # back to the model as a tool result it can react to (skip this
+        # source, try a different query, or just answer without it) instead
+        # of letting it crash the whole teaching turn.
+        return {"error": f"Tool '{name}' failed: {exc}"}, []
