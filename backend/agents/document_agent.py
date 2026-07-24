@@ -23,6 +23,7 @@ from .state import LearningState
 from .subject_agents import (
     _build_user_message,
     _format_context,
+    _format_student_memory,
     _retrieval_query,
     call_groq_with_retry,
 )
@@ -84,6 +85,7 @@ def document_tutor(state: LearningState) -> LearningState:
         context=context,
         chapter=state.get("chapter", ""),
         topic=state.get("topic", ""),
+        student_memory=_format_student_memory(state, state.get("topic", "")),
     )
     teaching_output = call_groq_with_retry(
         client,

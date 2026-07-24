@@ -150,6 +150,32 @@ def _build_user_message(state: LearningState) -> str:
     )
 
 
+def _format_student_memory(state: LearningState, topic: str) -> str:
+    """Phase 1B: render the student's persistent Memory model (loaded once at
+    session start, see api/routes/session.py) as a compact per-topic summary
+    for injection into the Learning Agent's system prompt."""
+    memory = state.get("student_memory") or {}
+    concept = topic.strip().lower()
+    mastery = memory.get("mastery", {}).get(concept)
+    confidence = memory.get("confidence", {}).get(concept)
+    weak_topics = {t.strip().lower() for t in memory.get("weak_topics", [])}
+    revision_due = {t.strip().lower() for t in memory.get("revision_due", [])}
+
+    flags = []
+    if concept in weak_topics:
+        flags.append("weak_topic")
+    if concept in revision_due:
+        flags.append("revision_due")
+
+    summary = {
+        "learning_style": memory.get("learning_style", "text"),
+        "mastery_on_this_topic": mastery if mastery is not None else "unknown (no prior data)",
+        "confidence_on_this_topic": confidence if confidence is not None else "unknown (no prior data)",
+        "flags": flags or ["none"],
+    }
+    return json.dumps(summary, ensure_ascii=False)
+
+
 def _retrieval_query(state: LearningState) -> str:
     topic = str(state.get("topic", "")).strip()
     user_request = _last_user_request(state.get("messages", []))
@@ -206,6 +232,7 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
         context=context,
         chapter=state["chapter"],
         topic=state["topic"],
+        student_memory=_format_student_memory(state, state["topic"]),
     )
     teaching_output = call_groq_with_retry(
         client,
