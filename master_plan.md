@@ -39,7 +39,11 @@ Replace it with an LLM decision node:
 - Output: strict JSON — `{"next_action": "teach" | "revise_prerequisite" | "quiz" | "reflect_retry" | "complete", "target_topic": str, "reasoning": str}`.
 - `graph.py`'s conditional edges now branch on `next_action` from the Supervisor's *reasoning*, not a client-supplied `mode` string. The mode field becomes an input signal, not the sole router.
 
-### 1B. Memory Agent (fixes "each session starts fresh")
+### 1B. Memory Agent (fixes "each session starts fresh") ✅ DONE (2026-07-22)
+
+Built. `students.profile` now holds the structured model below instead of subject-keyed dicts. Rolling EMA updates fire after every `feedback_agent` call (quiz correctness) *and* every re-explanation request (`/session/explain-differently`) — both push mastery/confidence, not just session-end scoring. Loaded once in `/session/start` and carried in `LearningState` for the rest of the session; the Supervisor's state summary and every Learning Agent prompt (math/science/sst/document tutor) now see it and are told to slow down when a topic's mastery is low. Verified against real Postgres: wrote and ran a throwaway script exercising correct → wrong → re-explain → reload, confirmed the values round-trip through the JSONB column exactly.
+
+Known gaps, carried forward: `quiz_generator` still only looks at this session's `weak_topics`, not the persistent `mastery`/`revision_due` maps; `learning_style` has no signal source yet (stuck at the "text" default); the frontend results page still shows placeholder mastery percentages — wiring it to real data is explicitly Phase 3's job per the plan below.
 
 The `students` Postgres table already exists (`profile JSONB`) but is only written at session end and never meaningfully shapes a new session. Upgrade it to the structured model `archie.md` specifies:
 
