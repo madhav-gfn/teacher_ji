@@ -25,3 +25,4 @@ class LearningState(TypedDict, total=False):
     document_id: str
     next_action: Literal["teach", "quiz", "feedback", "complete"]
     supervisor_reasoning: str
+    student_memory: dict
