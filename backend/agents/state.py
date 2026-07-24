@@ -26,3 +26,7 @@ class LearningState(TypedDict, total=False):
     next_action: Literal["teach", "quiz", "feedback", "complete"]
     supervisor_reasoning: str
     student_memory: dict
+    teaching_agent: str
+    teaching_reflection: dict
+    reflection_retry_count: int
+    reflection_next: Literal["accept", "retry"]

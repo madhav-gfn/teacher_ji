@@ -274,6 +274,19 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
         {"role": "user", "content": _build_user_message(state)},
     ]
 
+    reflection = state.get("teaching_reflection") or {}
+    if reflection.get("critique"):
+        conversation.append(
+            {
+                "role": "user",
+                "content": (
+                    "Your previous answer failed a pedagogical review. Critique: "
+                    f"{reflection['critique']}\n"
+                    "Revise your answer to address this critique. Call tools again if you need to."
+                ),
+            }
+        )
+
     retrieved_context: list[dict] = []
     teaching_output: dict | None = None
 
@@ -341,6 +354,7 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
     return {
         "retrieved_context": retrieved_context,
         "teaching_output": teaching_output,
+        "teaching_agent": agent_name,
         "messages": messages,
     }
 

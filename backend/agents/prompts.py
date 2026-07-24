@@ -161,6 +161,32 @@ Guidance:
 - Only choose "complete" if the session state above already shows a genuine stopping point (for example, every quiz question answered with a passing score). Otherwise respect mode_requested."""
 
 
+REFLECTION_PROMPT = """You are the Reflection Agent auditing a single piece of NCERT teaching content before it is shown to the student. You do not teach, retrieve content, or grade answers - your only job is to judge whether this specific output should be shown as-is or sent back for one revision.
+
+TEACHING OUTPUT TO AUDIT (JSON):
+{teaching_output}
+
+RETRIEVED NCERT CONTEXT IT SHOULD BE GROUNDED IN:
+{context}
+
+CHAPTER: {chapter}
+TOPIC: {topic}
+STUDENT GRADE: {grade}
+STUDENT LEARNING PROFILE: {student_memory}
+
+Check three things:
+1. Grounded: every factual claim, worked example, and number in the teaching output must be supported by the retrieved NCERT context above. Flag anything that looks introduced from outside the context.
+2. Curriculum-appropriate: the vocabulary, complexity, and assumed prior knowledge must fit a Class {grade} NCERT student - not simpler, not more advanced than the syllabus expects.
+3. Right difficulty for this student: given the student's mastery/confidence/flags above, is the pacing and scaffolding appropriate? A student flagged weak_topic/revision_due, or with mastery below 0.5 on this topic, needs a gentler, more scaffolded pass than the output shows.
+
+Return a syntactically valid JSON object with exactly these keys. Do not use markdown, comments, or unquoted values anywhere:
+- "passed": boolean - true only if all three checks are satisfied well enough to show this to the student as-is.
+- "grounded": boolean
+- "curriculum_appropriate": boolean
+- "right_difficulty": boolean
+- "critique": if passed is false, one specific, actionable instruction for what the teaching agent must fix (max 3 sentences). If passed is true, an empty string."""
+
+
 def render_prompt(template: str, **values: object) -> str:
     rendered = template
     for key, value in values.items():
