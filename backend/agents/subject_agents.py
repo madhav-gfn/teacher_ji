@@ -262,6 +262,18 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
     chapter = state.get("chapter", "")
     topic = state.get("topic", "")
 
+    # Phase 1A/1E: the Supervisor can redirect this turn to teach a
+    # foundational prerequisite instead of the requested topic (see
+    # supervisor.py:_eligible_prerequisite_topics). When it does,
+    # `target_topic` names the prerequisite - teach that instead, and note it
+    # so the Supervisor doesn't redirect to the same prerequisite again this
+    # session (state["revised_prerequisites"], set below).
+    is_prerequisite_revision = state.get("next_action") == "revise_prerequisite" and bool(
+        state.get("target_topic")
+    )
+    if is_prerequisite_revision:
+        topic = state["target_topic"]
+
     system_prompt = render_prompt(
         prompt_template,
         grade=grade,
@@ -269,9 +281,19 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
         topic=topic,
         student_memory=_format_student_memory(state, topic),
     )
+    if is_prerequisite_revision:
+        user_message = (
+            f"The student is about to learn '{state.get('topic', '')}', but first needs a quick "
+            f"refresher on the foundational topic '{topic}' (their mastery on it is currently low). "
+            f"Teach '{topic}' now - it may belong to a different chapter than '{chapter}', so ground it "
+            f"in whichever {subject} NCERT content actually covers it."
+        )
+    else:
+        user_message = _build_user_message(state)
+
     conversation: list[dict] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": _build_user_message(state)},
+        {"role": "user", "content": user_message},
     ]
 
     reflection = state.get("teaching_reflection") or {}
@@ -351,12 +373,17 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
             "content": teaching_output,
         }
     )
-    return {
+    result: LearningState = {
         "retrieved_context": retrieved_context,
         "teaching_output": teaching_output,
         "teaching_agent": agent_name,
         "messages": messages,
     }
+    if is_prerequisite_revision:
+        result["revised_prerequisites"] = list(
+            dict.fromkeys([*state.get("revised_prerequisites", []), topic.strip().lower()])
+        )
+    return result
 
 
 def math_agent(state: LearningState) -> LearningState:

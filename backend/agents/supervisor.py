@@ -5,6 +5,8 @@ import os
 
 from groq import Groq
 
+from api.prerequisites import get_prerequisites
+
 from .prompts import SUPERVISOR_PROMPT, render_prompt
 from .state import LearningState
 from .subject_agents import call_groq_with_retry
@@ -13,7 +15,8 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 SUPERVISOR_MODEL = "llama-3.1-8b-instant"
 
-_VALID_ACTIONS = {"teach", "quiz", "feedback", "complete"}
+_VALID_ACTIONS = {"teach", "revise_prerequisite", "quiz", "feedback", "complete"}
+_MASTERY_REVISION_THRESHOLD = 0.5
 
 _SUBJECT_NODES = {
     "math": "math_agent",
@@ -91,7 +94,53 @@ def _student_memory_summary(state: LearningState) -> dict:
     }
 
 
-def _state_summary(state: LearningState) -> str:
+def _prerequisite_summary(state: LearningState) -> list[dict]:
+    """Phase 1A/1C: prerequisite topics for the current topic, each annotated
+    with this student's mastery (from the Memory model) and whether it has
+    already been revised earlier this session - so the Supervisor can decide
+    whether a quick refresher belongs before teaching the requested topic."""
+    if state.get("document_id"):
+        return []
+    subject = _normalize_subject(state.get("subject"))
+    topic = str(state.get("topic", "")).strip()
+    if not subject or not topic:
+        return []
+
+    lookup = get_prerequisites(subject, topic)
+    if not lookup.get("found"):
+        return []
+
+    mastery_map = (state.get("student_memory") or {}).get("mastery", {})
+    already_revised = {t.strip().lower() for t in state.get("revised_prerequisites", [])}
+
+    return [
+        {
+            "topic": prereq,
+            "mastery": mastery_map.get(prereq.strip().lower(), "unknown (no prior data)"),
+            "already_revised_this_session": prereq.strip().lower() in already_revised,
+        }
+        for prereq in lookup["prerequisites"]
+    ]
+
+
+def _eligible_prerequisite_topics(prerequisites: list[dict]) -> set[str]:
+    """Prerequisites the Supervisor is actually allowed to redirect to: a known,
+    sub-threshold mastery score, not already revised this session. Guards the
+    LLM's choice against hallucinating an ineligible or made-up topic."""
+    eligible = set()
+    for prereq in prerequisites:
+        mastery = prereq.get("mastery")
+        if not isinstance(mastery, (int, float)):
+            continue
+        if mastery >= _MASTERY_REVISION_THRESHOLD:
+            continue
+        if prereq.get("already_revised_this_session"):
+            continue
+        eligible.add(prereq["topic"].strip().lower())
+    return eligible
+
+
+def _state_summary(state: LearningState, prerequisites: list[dict]) -> str:
     quiz_questions = state.get("quiz_questions", [])
     summary = {
         "mode_requested": state.get("mode", "teaching"),
@@ -108,6 +157,7 @@ def _state_summary(state: LearningState) -> str:
         "student_answer_pending": bool(state.get("student_answer")),
         "using_uploaded_document": bool(state.get("document_id")),
         "student_memory": _student_memory_summary(state),
+        "prerequisites_for_current_topic": prerequisites,
     }
     return json.dumps(summary, ensure_ascii=False)
 
@@ -118,11 +168,13 @@ def supervisor_node(state: LearningState) -> LearningState:
         next_action, reasoning = deterministic
         return {"next_action": next_action, "supervisor_reasoning": reasoning}
 
+    prerequisites = _prerequisite_summary(state)
+
     try:
         decision = call_groq_with_retry(
             client,
             SUPERVISOR_MODEL,
-            render_prompt(SUPERVISOR_PROMPT, state_summary=_state_summary(state)),
+            render_prompt(SUPERVISOR_PROMPT, state_summary=_state_summary(state, prerequisites)),
             "Decide the next action for this turn.",
         )
         next_action = str(decision.get("next_action", "")).strip()
@@ -135,10 +187,29 @@ def supervisor_node(state: LearningState) -> LearningState:
             "supervisor_reasoning": f"LLM decision unavailable ({exc}); used deterministic fallback: {reasoning}",
         }
 
+    target_topic = str(decision.get("target_topic") or state.get("topic", ""))
+    reasoning = str(decision.get("reasoning", ""))
+
+    if next_action == "revise_prerequisite":
+        eligible = _eligible_prerequisite_topics(prerequisites)
+        if target_topic.strip().lower() not in eligible:
+            # The LLM chose a prerequisite that isn't actually eligible (made
+            # up, already revised this session, or mastery isn't confirmed
+            # low) - never trust that blindly; teach the requested topic
+            # instead so a bad decision can't strand the student off-topic.
+            return {
+                "next_action": "teach",
+                "target_topic": state.get("topic", ""),
+                "supervisor_reasoning": (
+                    f"Rejected an ineligible revise_prerequisite target {target_topic!r}; "
+                    f"falling back to teach. Original reasoning: {reasoning}"
+                ),
+            }
+
     return {
         "next_action": next_action,
-        "target_topic": str(decision.get("target_topic") or state.get("topic", "")),
-        "supervisor_reasoning": str(decision.get("reasoning", "")),
+        "target_topic": target_topic,
+        "supervisor_reasoning": reasoning,
     }
 
 
@@ -148,7 +219,7 @@ def route_from_supervisor(state: LearningState) -> str:
     if next_action == "complete":
         return "complete"
 
-    if next_action == "teach":
+    if next_action in ("teach", "revise_prerequisite"):
         if state.get("document_id"):
             return "document_tutor"
         subject = _normalize_subject(state.get("subject"))

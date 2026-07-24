@@ -112,6 +112,41 @@ def _append_user_message(state: dict[str, Any], content: str) -> dict[str, Any]:
     return {**state, "messages": messages}
 
 
+def _was_redirected_to_prerequisite(state: dict[str, Any], requested_topic: str) -> bool:
+    """Whether the Supervisor (agents/supervisor.py) redirected this turn to
+    teach a prerequisite refresher instead of the requested topic.
+
+    Can't check state["next_action"] for this - by the time the graph
+    finishes, the Supervisor's second (post-teaching) visit has already
+    overwritten it to "complete" as the turn's terminal action, same as a
+    normal "teach" turn. target_topic diverging from the requested topic is
+    the only signal that survives to the end of the invocation.
+    """
+    target_topic = str(state.get("target_topic") or "").strip().lower()
+    return bool(target_topic) and target_topic != requested_topic.strip().lower()
+
+
+def _actually_taught_topic(state: dict[str, Any], requested_topic: str) -> str:
+    """What was actually taught this turn - the prerequisite if redirected,
+    otherwise the requested topic. Surfacing this (not always the requested
+    topic) keeps the response from being mislabeled after a redirect."""
+    if _was_redirected_to_prerequisite(state, requested_topic):
+        return str(state["target_topic"])
+    return requested_topic
+
+
+def _covered_topics_for_state(
+    state: dict[str, Any], requested_topic: str, already_covered: list[str]
+) -> list[str]:
+    """Topics to treat as done for next-topic progression. Excludes
+    requested_topic when this turn was redirected to a prerequisite refresher
+    instead, so the student is still taught the real topic on the next call
+    rather than having it silently skipped."""
+    if _was_redirected_to_prerequisite(state, requested_topic):
+        return list(already_covered)
+    return [*already_covered, requested_topic]
+
+
 async def _reteach_current_topic(
     session_id: str,
     state: dict[str, Any],
@@ -139,12 +174,14 @@ async def _reteach_current_topic(
         session_id=session_id,
         subject=_response_subject(reteach_state),
         chapter=reteach_state["chapter"],
-        topic=reteach_state["topic"],
+        topic=_actually_taught_topic(reteach_state, reteach_state["topic"]),
         teaching_output=reteach_state.get("teaching_output", {}),
         retrieved_chunks=reteach_state.get("retrieved_context", []),
         next_topics=_remaining_topics_from_state(
             reteach_state,
-            list(reteach_state.get("topics_covered", [])) + [reteach_state["topic"]],
+            _covered_topics_for_state(
+                reteach_state, reteach_state["topic"], list(reteach_state.get("topics_covered", []))
+            ),
         ),
     )
 
@@ -235,13 +272,13 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
 
     await save_session(session_id, state)
 
-    remaining = _remaining_topics_from_state(state, [topic])
+    remaining = _remaining_topics_from_state(state, _covered_topics_for_state(state, topic, []))
 
     return TeachingResponse(
         session_id=session_id,
         subject=response_subject,
         chapter=chapter,
-        topic=topic,
+        topic=_actually_taught_topic(state, topic),
         teaching_output=state.get("teaching_output", {}),
         retrieved_chunks=state.get("retrieved_context", []),
         next_topics=remaining,
@@ -306,13 +343,15 @@ async def next_topic(body: NextTopicRequest):
 
     await save_session(body.session_id, state)
 
-    still_remaining = _remaining_topics_from_state(state, topics_covered + [next_t])
+    still_remaining = _remaining_topics_from_state(
+        state, _covered_topics_for_state(state, next_t, topics_covered)
+    )
 
     return TeachingResponse(
         session_id=body.session_id,
         subject=_response_subject(state),
         chapter=chapter,
-        topic=next_t,
+        topic=_actually_taught_topic(state, next_t),
         teaching_output=state.get("teaching_output", {}),
         retrieved_chunks=state.get("retrieved_context", []),
         next_topics=still_remaining,

@@ -23,10 +23,12 @@ class LearningState(TypedDict, total=False):
     topics_covered: list[str]
     all_chapter_topics: list[str]
     document_id: str
-    next_action: Literal["teach", "quiz", "feedback", "complete"]
+    next_action: Literal["teach", "revise_prerequisite", "quiz", "feedback", "complete"]
+    target_topic: str
     supervisor_reasoning: str
     student_memory: dict
     teaching_agent: str
     teaching_reflection: dict
     reflection_retry_count: int
     reflection_next: Literal["accept", "retry"]
+    revised_prerequisites: list[str]
