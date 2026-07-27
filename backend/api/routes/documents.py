@@ -20,9 +20,10 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from agents.document_agent import extract_topics
+from api.auth import get_current_student_id, require_owner
 from api.db import (
     delete_document as db_delete_document,
     get_document,
@@ -46,9 +47,9 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
 @router.post("/upload", response_model=UploadDocumentResponse)
 async def upload_document(
-    student_id: str = Form(...),
     title: str | None = Form(default=None),
     file: UploadFile = File(...),
+    current_student_id: str = Depends(get_current_student_id),
 ) -> UploadDocumentResponse:
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in SUPPORTED_UPLOAD_EXTENSIONS:
@@ -90,7 +91,7 @@ async def upload_document(
 
     await insert_document(
         document_id=document_id,
-        student_id=student_id,
+        student_id=current_student_id,
         title=final_title,
         filename=filename,
         topics=topics,
@@ -117,8 +118,10 @@ async def upload_document(
 
 
 @router.get("", response_model=list[DocumentSummary])
-async def get_student_documents(student_id: str) -> list[DocumentSummary]:
-    rows = await list_documents(student_id)
+async def get_student_documents(
+    current_student_id: str = Depends(get_current_student_id),
+) -> list[DocumentSummary]:
+    rows = await list_documents(current_student_id)
     return [
         DocumentSummary(
             document_id=row["document_id"],
@@ -138,10 +141,14 @@ async def get_student_documents(student_id: str) -> list[DocumentSummary]:
 
 
 @router.get("/{document_id}", response_model=DocumentDetail)
-async def get_document_detail(document_id: str) -> DocumentDetail:
+async def get_document_detail(
+    document_id: str,
+    current_student_id: str = Depends(get_current_student_id),
+) -> DocumentDetail:
     row = await get_document(document_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found.")
+    require_owner(row["student_id"], current_student_id)
 
     return DocumentDetail(
         document_id=row["document_id"],
@@ -160,10 +167,14 @@ async def get_document_detail(document_id: str) -> DocumentDetail:
 
 
 @router.delete("/{document_id}")
-async def remove_document(document_id: str) -> dict[str, str]:
+async def remove_document(
+    document_id: str,
+    current_student_id: str = Depends(get_current_student_id),
+) -> dict[str, str]:
     row = await get_document(document_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Document '{document_id}' not found.")
+    require_owner(row["student_id"], current_student_id)
 
     faiss_path, meta_path = custom_index_paths(document_id)
     faiss_path.unlink(missing_ok=True)

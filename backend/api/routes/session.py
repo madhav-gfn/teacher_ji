@@ -16,10 +16,11 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from agents.graph import run_session
 from agents.state import LearningState
+from api.auth import get_current_student_id, require_owner
 from api.curriculum import get_chapter_topics
 from api.db import apply_reexplanation_signal, get_document, get_student_memory, load_session, save_session
 from api.models import (
@@ -192,7 +193,10 @@ async def _reteach_current_topic(
 
 
 @router.post("/start", response_model=TeachingResponse)
-async def start_session(body: StartSessionRequest) -> TeachingResponse:
+async def start_session(
+    body: StartSessionRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> TeachingResponse:
     """
     Create a new learning session.
 
@@ -243,10 +247,10 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
     # Phase 1B Memory Agent: load the student's persistent learning profile once
     # per session and carry it in state so every Supervisor/Learning Agent turn
     # for this session sees it (see agents/supervisor.py, agents/subject_agents.py).
-    student_memory = await get_student_memory(body.student_id)
+    student_memory = await get_student_memory(current_student_id)
 
     initial_state: LearningState = {
-        "student_id": body.student_id,
+        "student_id": current_student_id,
         "grade": grade,
         "subject": state_subject,
         "chapter": chapter,
@@ -291,7 +295,10 @@ async def start_session(body: StartSessionRequest) -> TeachingResponse:
 
 
 @router.post("/next-topic")
-async def next_topic(body: NextTopicRequest):
+async def next_topic(
+    body: NextTopicRequest,
+    current_student_id: str = Depends(get_current_student_id),
+):
     """
     Advance the session to the next topic in the chapter.
 
@@ -300,6 +307,7 @@ async def next_topic(body: NextTopicRequest):
     - If chapter is complete → returns ChapterCompleteResponse (ready_for_quiz=true).
     """
     state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
 
     # Record the completed topic (deduped)
     topics_covered: list[str] = state.get("topics_covered", [])
@@ -359,8 +367,12 @@ async def next_topic(body: NextTopicRequest):
 
 
 @router.post("/question", response_model=TeachingResponse)
-async def ask_topic_question(body: SessionQuestionRequest) -> TeachingResponse:
+async def ask_topic_question(
+    body: SessionQuestionRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> TeachingResponse:
     state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
     return await _reteach_current_topic(
         body.session_id,
         state,
@@ -372,8 +384,12 @@ async def ask_topic_question(body: SessionQuestionRequest) -> TeachingResponse:
 
 
 @router.post("/explain-differently", response_model=TeachingResponse)
-async def explain_differently(body: ExplainDifferentlyRequest) -> TeachingResponse:
+async def explain_differently(
+    body: ExplainDifferentlyRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> TeachingResponse:
     state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
     return await _reteach_current_topic(
         body.session_id,
         state,

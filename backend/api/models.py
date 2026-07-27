@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class StartSessionRequest(BaseModel):
-    student_id: str = Field(..., description="Unique student identifier")
     document_id: str | None = Field(
         default=None,
         description="Uploaded document ID — set this to study your own material "
@@ -79,19 +78,19 @@ class TeachingResponse(BaseModel):
 
 
 class NextTopicRequest(BaseModel):
-    session_id: str = Field(..., description="Active session UUID")
+    session_id: str = Field(..., min_length=1, description="Active session UUID")
     completed_topic: str = Field(
         ..., min_length=1, description="Topic the student just finished"
     )
 
 
 class SessionQuestionRequest(BaseModel):
-    session_id: str = Field(..., description="Active session UUID")
+    session_id: str = Field(..., min_length=1, description="Active session UUID")
     question: str = Field(..., min_length=1, description="Student question about the current topic")
 
 
 class ExplainDifferentlyRequest(BaseModel):
-    session_id: str = Field(..., description="Active session UUID")
+    session_id: str = Field(..., min_length=1, description="Active session UUID")
     hint: str = Field(
         default="Explain this in a different way using a new example and simpler wording.",
         min_length=1,
@@ -116,7 +115,7 @@ class ChapterCompleteResponse(BaseModel):
 
 
 class StartQuizRequest(BaseModel):
-    session_id: str = Field(..., description="Active session UUID")
+    session_id: str = Field(..., min_length=1, description="Active session UUID")
 
 
 class QuizResponse(BaseModel):
@@ -128,7 +127,7 @@ class QuizResponse(BaseModel):
 
 
 class SubmitAnswerRequest(BaseModel):
-    session_id: str = Field(..., description="Active session UUID")
+    session_id: str = Field(..., min_length=1, description="Active session UUID")
     question_id: int = Field(..., ge=1, description="1-based question index")
     student_answer: str = Field(..., min_length=1, description="Student's answer text")
 
@@ -187,9 +186,9 @@ class StudentProfile(BaseModel):
 class UpdateProfileRequest(BaseModel):
     """Payload for POST /student/{student_id}/update at session end."""
 
-    session_id: str
-    subject: str
-    chapter: str
+    session_id: str = Field(..., min_length=1)
+    subject: str = Field(..., min_length=1)
+    chapter: str = Field(..., min_length=1)
     session_score: float = Field(ge=0.0, le=1.0)
     mastered_topics: list[str] = Field(default_factory=list)
     weak_topics: list[str] = Field(default_factory=list)
