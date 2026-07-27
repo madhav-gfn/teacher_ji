@@ -39,6 +39,11 @@ async def get_current_student_id(authorization: str | None = Header(default=None
             algorithms=["RS256"],
             issuer=_CLERK_ISSUER,
             options={"verify_aud": False},
+            # Clerk session tokens have a ~60s validity window by design, so
+            # even a few seconds of container clock drift is enough to reject
+            # a genuinely valid token. Tolerate some skew rather than trusting
+            # the host clock to be perfectly synced.
+            leeway=60,
         )
     except jwt.PyJWTError as exc:
         logger.warning("JWT verification failed: %s", exc)
