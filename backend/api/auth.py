@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 import jwt
 from fastapi import Header, HTTPException
@@ -43,10 +44,23 @@ async def get_current_student_id(authorization: str | None = Header(default=None
             # even a few seconds of container clock drift is enough to reject
             # a genuinely valid token. Tolerate some skew rather than trusting
             # the host clock to be perfectly synced.
-            leeway=60,
+            leeway=300,
         )
     except jwt.PyJWTError as exc:
-        logger.warning("JWT verification failed: %s", exc)
+        try:
+            unverified = jwt.decode(token, options={"verify_signature": False})
+            now = time.time()
+            logger.warning(
+                "JWT verification failed: %s (server_time=%s exp=%s nbf=%s exp_minus_now=%s nbf_minus_now=%s)",
+                exc,
+                now,
+                unverified.get("exp"),
+                unverified.get("nbf"),
+                (unverified.get("exp") or 0) - now,
+                (unverified.get("nbf") or 0) - now,
+            )
+        except Exception:
+            logger.warning("JWT verification failed: %s (token could not be decoded for diagnostics)", exc)
         raise HTTPException(status_code=401, detail="Invalid or expired session token.") from exc
 
     student_id = claims.get("sub")
