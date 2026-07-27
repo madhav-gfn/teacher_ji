@@ -12,10 +12,11 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from agents.graph import run_session
 from agents.state import LearningState
+from api.auth import get_current_student_id, require_owner
 from api.db import load_session, save_session, update_mastery_from_feedback
 from api.models import (
     FeedbackResponse,
@@ -74,7 +75,10 @@ async def _invoke_graph(state: LearningState) -> dict[str, Any]:
 
 
 @router.post("/start", response_model=QuizResponse)
-async def start_quiz(body: StartQuizRequest) -> QuizResponse:
+async def start_quiz(
+    body: StartQuizRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> QuizResponse:
     """
     Generate quiz questions for the current chapter.
 
@@ -84,6 +88,7 @@ async def start_quiz(body: StartQuizRequest) -> QuizResponse:
     individually via /quiz/submit-answer.
     """
     state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
 
     state["mode"] = "quiz"
     state["current_question_index"] = 0
@@ -114,7 +119,10 @@ async def start_quiz(body: StartQuizRequest) -> QuizResponse:
 
 
 @router.post("/submit-answer", response_model=FeedbackResponse)
-async def submit_answer(body: SubmitAnswerRequest) -> FeedbackResponse:
+async def submit_answer(
+    body: SubmitAnswerRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> FeedbackResponse:
     """
     Evaluate a student's answer for a specific question.
 
@@ -126,6 +134,7 @@ async def submit_answer(body: SubmitAnswerRequest) -> FeedbackResponse:
     - Updates session_score (rolling: correct / answered).
     """
     state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
 
     questions: list[dict] = state.get("quiz_questions", [])
     if not questions:

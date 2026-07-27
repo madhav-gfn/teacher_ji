@@ -181,14 +181,12 @@ export function ResultsPage() {
               const response = await apiClient.startSession(
                 subject === "custom"
                   ? {
-                      student_id: studentId,
                       document_id: documentId ?? undefined,
                       grade: grade ?? undefined,
                       topic: firstWeakTopic,
                       custom_topics: weakTopics,
                     }
                   : {
-                      student_id: studentId,
                       grade: grade ?? undefined,
                       subject,
                       chapter: chapter ?? undefined,
@@ -227,7 +225,6 @@ export function ResultsPage() {
 
               const nextTopic = curriculum[subject][grade][nextChapter]?.[0] ?? "Introduction";
               const response = await apiClient.startSession({
-                student_id: studentId,
                 grade,
                 subject,
                 chapter: nextChapter,

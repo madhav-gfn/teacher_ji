@@ -12,8 +12,9 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from api.db import (
     close_postgres,
@@ -81,6 +82,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Error handling
+# ---------------------------------------------------------------------------
+# FastAPI's default handler for an uncaught exception returns a plain-text
+# "Internal Server Error" body, not JSON — the frontend's parseResponse()
+# always expects a {"detail": "..."} JSON body, so an unhandled error would
+# otherwise surface as a confusing JSON-parse error instead of a message.
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error("Unhandled exception on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
 
 
 # ---------------------------------------------------------------------------

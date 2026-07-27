@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from api.auth import get_current_student_id, require_owner
 from api.db import get_student, get_student_memory, upsert_student
 from api.models import StudentProfile, UpdateProfileRequest
 
@@ -25,11 +26,15 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/{student_id}", response_model=StudentProfile)
-async def get_student_profile(student_id: str) -> StudentProfile:
+async def get_student_profile(
+    student_id: str,
+    current_student_id: str = Depends(get_current_student_id),
+) -> StudentProfile:
     """
     Retrieve a student's persistent profile from Postgres.
     Returns 404 if no record exists yet.
     """
+    require_owner(student_id, current_student_id)
     row = await get_student(student_id)
     if row is None:
         raise HTTPException(
@@ -60,6 +65,7 @@ async def get_student_profile(student_id: str) -> StudentProfile:
 async def update_student_profile(
     student_id: str,
     body: UpdateProfileRequest,
+    current_student_id: str = Depends(get_current_student_id),
 ) -> StudentProfile:
     """
     Merge a completed session's results into the persistent Memory model.
@@ -75,6 +81,7 @@ async def update_student_profile(
       weak_topics/revision_due.
     - Appends a quiz_history entry, increments total_sessions, upserts to Postgres.
     """
+    require_owner(student_id, current_student_id)
     subject = body.subject.strip().lower()
 
     # Load existing profile (type-guarded against pre-Phase-1B rows) or start fresh

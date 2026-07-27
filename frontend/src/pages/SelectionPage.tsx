@@ -59,7 +59,6 @@ export function SelectionPage() {
       const topic = chapterTopics[0] ?? "Introduction";
 
       return apiClient.startSession({
-        student_id: studentId,
         grade,
         subject,
         chapter,
