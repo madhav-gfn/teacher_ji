@@ -127,7 +127,7 @@ flowchart TD
 
 ---
 
-## Phase 2 — Auth & Professional Foundation (~2-3 days)
+## Phase 2 — Auth & Professional Foundation (~2-3 days) ✅ DONE (2026-07-28)
 
 - **Clerk** integration (already decided): replace the `student-${random}` localStorage ID with Clerk-authenticated users; verify Clerk JWTs in FastAPI middleware; map Clerk `user_id` → `students.student_id`.
 - **README overhaul**: move the raw dev-journal section into a linked `ENGINEERING_LOG.md` (it's good evidence of debugging skill — just not the first thing a recruiter should see). Add: problem statement, screenshots/demo link, a "Key Design Decisions" section that explicitly walks through the Supervisor → Learning Agent → Memory → Reflection loop from Phase 1, and a "Limitations & Future Work" section.
