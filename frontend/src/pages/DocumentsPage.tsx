@@ -16,11 +16,11 @@ export function DocumentsPage() {
 
   const documentsQuery = useQuery({
     queryKey: ["documents", studentId],
-    queryFn: () => apiClient.listDocuments(studentId),
+    queryFn: () => apiClient.listDocuments(),
   });
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => apiClient.uploadDocument(file, studentId, title || undefined),
+    mutationFn: (file: File) => apiClient.uploadDocument(file, title || undefined),
     onSuccess: () => {
       setTitle("");
       void queryClient.invalidateQueries({ queryKey: ["documents", studentId] });
@@ -37,7 +37,6 @@ export function DocumentsPage() {
   const startFromDocument = useMutation({
     mutationFn: async (doc: DocumentDetail) => {
       const response = await apiClient.startSession({
-        student_id: studentId,
         document_id: doc.document_id,
         grade,
         topic: doc.topics[0],

@@ -153,3 +153,7 @@ myenv/
 
 settings.json*
 *.docx
+
+# Clerk CLI's local skill-doc cache (its own docs, not project source)
+frontend/.agents/
+frontend/skills-lock.json

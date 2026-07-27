@@ -7,19 +7,6 @@ import type {
   TeachingOutput,
 } from "../api/client";
 
-const STORAGE_KEY = "teacher-ji-student-id";
-
-function getOrCreateStudentId() {
-  const existing = window.localStorage.getItem(STORAGE_KEY);
-  if (existing) {
-    return existing;
-  }
-
-  const generated = `student-${Math.random().toString(36).slice(2, 10)}`;
-  window.localStorage.setItem(STORAGE_KEY, generated);
-  return generated;
-}
-
 interface SessionState {
   studentId: string;
   sessionId: string | null;
@@ -51,7 +38,7 @@ interface SessionState {
 }
 
 const initialState = () => ({
-  studentId: getOrCreateStudentId(),
+  studentId: "",
   sessionId: null,
   documentId: null,
   grade: null,
@@ -99,7 +86,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   setFeedbackOutput: (output) => set({ feedbackOutput: output }),
   setCurrentQuestionIndex: (index) => set({ currentQuestionIndex: index }),
   resetSession: () =>
-    set(() => ({
+    set((state) => ({
       ...initialState(),
+      studentId: state.studentId,
     })),
 }));

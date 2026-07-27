@@ -1,3 +1,5 @@
+import { getAuthToken } from "./authToken";
+
 export type Subject = "math" | "science" | "sst" | "custom";
 export type SessionMode = "selection" | "documents" | "teaching" | "quiz" | "results";
 
@@ -27,7 +29,6 @@ export interface TeachingOutput {
 }
 
 export interface StartSessionRequest {
-  student_id: string;
   document_id?: string;
   grade?: number;
   subject?: "math" | "science" | "sst";
@@ -177,9 +178,12 @@ async function request<TResponse>(
   path: string,
   init?: RequestInit,
 ): Promise<TResponse> {
+  const token = await getAuthToken();
+
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -231,21 +235,22 @@ export const apiClient = {
       body: JSON.stringify(body),
     });
   },
-  async uploadDocument(file: File, studentId: string, title?: string) {
+  async uploadDocument(file: File, title?: string) {
     const form = new FormData();
     form.append("file", file);
-    form.append("student_id", studentId);
     if (title) {
       form.append("title", title);
     }
+    const token = await getAuthToken();
     const response = await fetch(`${BASE_URL}/documents/upload`, {
       method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       body: form,
     });
     return parseResponse<DocumentDetail>(response);
   },
-  listDocuments(studentId: string) {
-    return request<DocumentSummary[]>(`/documents?student_id=${encodeURIComponent(studentId)}`);
+  listDocuments() {
+    return request<DocumentSummary[]>("/documents");
   },
   getDocument(documentId: string) {
     return request<DocumentDetail>(`/documents/${documentId}`);
