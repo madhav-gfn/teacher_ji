@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 
 import jwt
 from fastapi import Header, HTTPException
@@ -20,7 +19,7 @@ from jwt import PyJWKClient
 
 logger = logging.getLogger(__name__)
 
-_CLERK_ISSUER = os.getenv("CLERK_ISSUER", "").rstrip("/")
+_CLERK_ISSUER = os.getenv("CLERK_ISSUER", "").strip().rstrip("/")
 _jwks_client = PyJWKClient(f"{_CLERK_ISSUER}/.well-known/jwks.json") if _CLERK_ISSUER else None
 
 
@@ -40,24 +39,17 @@ async def get_current_student_id(authorization: str | None = Header(default=None
             algorithms=["RS256"],
             issuer=_CLERK_ISSUER,
             options={"verify_aud": False},
-            # Clerk session tokens have a ~60s validity window by design, so
-            # even a few seconds of container clock drift is enough to reject
-            # a genuinely valid token. Tolerate some skew rather than trusting
-            # the host clock to be perfectly synced.
-            leeway=300,
+            # Small leeway for ordinary container clock drift.
+            leeway=30,
         )
     except jwt.PyJWTError as exc:
         try:
             unverified = jwt.decode(token, options={"verify_signature": False})
-            now = time.time()
             logger.warning(
-                "JWT verification failed: %s (server_time=%s exp=%s nbf=%s exp_minus_now=%s nbf_minus_now=%s)",
+                "JWT verification failed: %s (configured_issuer=%r token_issuer=%r)",
                 exc,
-                now,
-                unverified.get("exp"),
-                unverified.get("nbf"),
-                (unverified.get("exp") or 0) - now,
-                (unverified.get("nbf") or 0) - now,
+                _CLERK_ISSUER,
+                unverified.get("iss"),
             )
         except Exception:
             logger.warning("JWT verification failed: %s (token could not be decoded for diagnostics)", exc)
