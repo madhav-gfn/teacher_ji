@@ -18,98 +18,56 @@ pinned: false
 
 TeacherJi is a retrieval-augmented, multi-agent tutoring system that delivers NCERT-grounded teaching, quizzes, and targeted feedback. It combines an offline FAISS vector index of NCERT textbooks with structured LLM prompts to produce curriculum-aligned outputs.
 
-
-## Dev Timeline
-
-a fresh issue has come up
-my deployment has exeeded the memory limit
-so imma try hugging face emmbeddings to get this done
-may be this will reduce some load
-but  my FAISS database might also be the problem
-
-my HF model is not working its giving some HTTPS error
-I am getting this error when trying to use the Hugging Face API for embeddings:
-
-changed the model
-
-
-it was not the issue
-The real problem was model/task mismatch:
-
-sentence-transformers/all-MiniLM-L6-v2 and intfloat/multilingual-e5-small are served by HF Inference as sentence-similarity, not feature-extraction.
-my RAG needs raw embedding vectors, so it must use HF feature_extraction.
-I switched the code to Hugging Face’s official InferenceClient.feature_extraction path and changed the model to one that actually works with my setup: microsoft/harrier-oss-v1-0.6b.
-
-
-
-still this doesn't work the backend is throwing 404 error
-and render shows failed to generate
-
-Final issue was:
-
-my UI/backend curriculum still had old Class 6 math chapters like Whole Numbers.
-my rebuilt PDF/index has current chapters like Number Play, Prime Time, The Other Side of Zero.
-Because of that mismatch, retrieval returned no NCERT context.
-Then the math prompt asked Groq for a “bold statement”, so Groq generated invalid JSON like:
-"headline": **"Natural and Whole Numbers Introduction"**
-
-
-I fixed:
-
-JSON prompts: no markdown/bold/unquoted values.
-Groq retry: adds strict JSON correction after JSON-mode rejection.
-Teaching retrieval: if chapter-filtered retrieval returns empty, it retries without stale chapter filter.
-Quiz retrieval: same fallback.
-Class 6 math curriculum in backend and frontend now matches the ingested PDF chapters.
-Verified a production-like math agent call succeeds:
-dict_keys([...])
-Numbers in daily life
-5 retrieved chunks
-
----
-
-new feature: let students upload their own material and study it, not just NCERT PDFs.
-
-the whole app was built around subject (math/science/sst) + grade + chapter, with a hardcoded
-topic list per chapter in curriculum.py. an uploaded PDF/txt/md has none of that, so I couldn't
-just reuse the subject agents as-is.
-
-what I did instead:
-- reused the existing chunking logic from rag/ingest.py, just without the chapter-heading
-  detection — an upload is chunked page by page into its own FAISS index under
-  rag/index/custom/<document_id>.faiss, keyed by document_id instead of subject+grade.
-- added a generic document_tutor agent (agents/document_agent.py) that isn't tied to any
-  subject — it retrieves from that document's own index and teaches with a subject-agnostic
-  JSON schema.
-- since there's no curriculum.py entry for a random upload, I added a one-time LLM call right
-  after ingestion (extract_topics) that reads a sample of the document and generates its own
-  ordered topic list. that list flows into the same custom_topics field the session API already
-  had, so the existing topic-by-topic teaching + quiz + feedback loop just works unmodified.
-- added a documents table in Postgres so uploads are saved per student and show up as a library,
-  not just a one-off session.
-- new dependency: python-multipart (FastAPI needs it for multipart file uploads, otherwise
-  UploadFile just breaks at runtime with a confusing error).
-- kept embeddings on the remote HF path for uploads too — after the memory-limit deploy issue
-  earlier, no interest in loading a local embedding model just for this.
+Full chronological build/debugging notes (deployment issues, embedding model
+dead ends, curriculum mismatches) live in [ENGINEERING_LOG.md](ENGINEERING_LOG.md).
 
 ---
 
 ## Table of Contents
+- [Problem Statement](#problem-statement)
+- [Screenshots](#screenshots)
 - [Overview](#overview)
 - [Quickstart](#quickstart-local-development)
 - [Architecture](#architecture)
+- [Key Design Decisions](#key-design-decisions)
 - [Components](#components)
 - [API Reference](#api-reference)
 - [Data & Persistence](#data-models--persistence)
 - [Environment Variables](#environment-variables)
+- [Limitations & Future Work](#limitations--future-work)
 
 ---
+
+## Problem Statement
+
+NCERT textbooks are the shared curriculum for millions of students, but
+one-size-fits-all classroom pacing means a student weak in one prerequisite
+(say, fractions) keeps getting taught the next topic (percentages) regardless.
+Generic LLM chat doesn't fix this either — it isn't grounded in the actual
+textbook content, doesn't track what a specific student has and hasn't
+mastered across sessions, and doesn't verify its own output before showing it
+to a learner.
+
+TeacherJi is a multi-agent tutoring system that: (1) grounds every
+explanation and quiz question in retrieved NCERT text via FAISS, not the
+model's parametric memory; (2) tracks a persistent per-student mastery model
+across sessions, so a session doesn't start from zero every time; (3) lets a
+Supervisor agent redirect to a prerequisite refresher instead of barreling
+into a topic the student isn't ready for; and (4) runs a Reflection pass over
+teaching output before the student ever sees it.
+
+## Screenshots
+
+| Session setup | Structured teaching board |
+|---|---|
+| ![Selection page](docs/screenshots/selection-page.jpg) | ![Teaching page](docs/screenshots/teaching-page.jpg) |
 
 ## Overview
 
 - Grounded teaching: every explanation and quiz is generated from retrieved NCERT text chunks.
-- Multi-agent design: subject-specific agents (math, science, SST), a quiz generator, and a feedback evaluator.
+- Multi-agent design: a Supervisor plans each turn; subject-specific Learning Agents (math, science, SST) teach with tool access; a Reflection Agent gates their output; a Memory Agent tracks per-student mastery.
 - Short-lived sessions: Upstash Redis stores `LearningState` per session (4h TTL); NeonDB Postgres stores persistent student profiles.
+- Authenticated: Clerk-backed accounts — every API request is tied to a verified user, not a client-generated ID.
 
 ---
 
@@ -300,6 +258,88 @@ classDiagram
 
 ---
 
+## Key Design Decisions
+
+The core of this project is the agentic loop each teaching turn runs
+through — not the CRUD layer around it. Every turn passes through four
+cooperating pieces before the student sees anything:
+
+```mermaid
+flowchart TD
+    START --> SUP[Supervisor\nLLM decision: teach / revise_prereq / quiz / complete]
+    SUP -->|revise_prerequisite| LEARN
+    SUP -->|teach| LEARN[Learning Agent\nmath/science/sst + tools]
+    LEARN -->|search_ncert / get_prerequisites / python_calculator| TOOLS[(Tools)]
+    TOOLS --> LEARN
+    LEARN --> REFLECT[Reflection Agent\nteaching output only]
+    REFLECT -->|fail, retry<=1| LEARN
+    REFLECT -->|pass| SUP
+    SUP -->|quiz| QUIZ[quiz_generator]
+    QUIZ --> SUP
+    SUP -->|feedback| FEED[feedback_agent]
+    FEED --> MEM[Memory Agent\nupdate mastery model]
+    MEM --> SUP
+    SUP -->|complete| END
+```
+
+**Supervisor over if/else routing.** `agents/supervisor.py` is an LLM
+decision node (`llama-3.1-8b-instant`, kept cheap since it runs every turn),
+not a hardcoded state machine. It sees the current `LearningState`, the
+student's Memory model, and the prerequisite map for the current topic, and
+picks the next action as strict JSON. Its `revise_prerequisite` choice is
+never trusted blindly — `_eligible_prerequisite_topics` independently
+computes which prerequisites are actually valid redirect targets (known
+mastery below 0.5, not already revised this session) and silently downgrades
+to `"teach"` if the LLM's pick isn't in that set. This is what produces the
+"teach Division before Fractions" behavior rather than barreling through a
+curriculum a student isn't ready for.
+
+**Learning Agents with real tool choice, not fixed retrieval.** The subject
+agents (`agents/subject_agents.py`) used to always do one retrieval + one Groq
+call. They now run a bounded tool-calling loop (Groq native tool-calling,
+capped at 4 iterations) with three tools: `search_ncert` (grounds the
+explanation in the actual textbook chunks), `get_prerequisites` (backs the
+Supervisor's redirect decision), and `python_calculator` (a restricted
+AST-walking evaluator, not `eval()`, that verifies a computed numeric answer
+before the math agent presents it). A grounding guarantee is enforced in code
+after the loop: if `search_ncert` was never called or returned nothing, the
+canned "context not found" response is used regardless of what the model
+produced.
+
+**Reflection Agent gates output before the Supervisor ever sees it.**
+`agents/reflection.py` sits between the Learning Agents and the Supervisor.
+A cheap `llama-3.1-8b-instant` call checks whether the teaching output is
+grounded in the retrieved chunks, curriculum-appropriate for the grade, and
+paced right for the student's tracked mastery. On failure it routes back to
+the same Learning Agent exactly once with the critique appended to the
+prompt; a second failure is accepted rather than looped again, to bound
+latency. It fails open (accepts the output) if the reflection call itself
+errors — it's a quality gate, not a hard dependency. Quiz generation and
+feedback scoring skip reflection entirely; grounding a fixed set of MCQ
+questions doesn't carry the same risk as open-ended explanation.
+
+**Memory Agent makes "the student already struggled with this" durable.**
+Sessions used to start from zero every time — the `students.profile` JSONB
+column was written at session end and never read back into a new session.
+Now `mastery`/`confidence`/`weak_topics`/`revision_due` are loaded once at
+`/session/start`, injected into every Supervisor and Learning Agent prompt
+for that session, and updated with a rolling EMA after every quiz answer
+*and* every re-explanation request (not just at session end). This is the
+piece that makes the Supervisor's prerequisite redirect meaningful — without
+persistent mastery, there's nothing to redirect on.
+
+**Authentication maps identity onto the same primary key, not a new table.**
+Clerk JWTs are verified backend-side against the instance's public JWKS
+(`backend/api/auth.py`) — no secret key needed for verification, since a JWT's
+signature only needs the issuer's public keys. The Clerk user id from the
+verified token's `sub` claim is used directly as `students.student_id` and
+`documents.student_id`; every route that used to trust a client-supplied
+`student_id` now derives it from the token and 403s on any mismatch, closing
+what was previously an open IDOR (anyone could read/write any student's
+profile by guessing or supplying their id).
+
+---
+
 ## Components
 
 ### Backend
@@ -310,8 +350,12 @@ classDiagram
 | `api/routes/quiz.py` | Quiz phase — start quiz, submit answer |
 | `api/routes/student.py` | Persistent profile — get, update |
 | `api/db.py` | Upstash Redis REST client + asyncpg helpers |
+| `api/auth.py` | Verifies Clerk JWTs against the instance JWKS; `require_owner` ownership check |
 | `api/curriculum.py` | Canonical grade/subject/chapter → topic list mapping |
-| `agents/subject_agents.py` | `math_agent`, `science_agent`, `sst_agent` |
+| `agents/supervisor.py` | Supervisor decision node — teach / revise_prerequisite / quiz / complete |
+| `agents/subject_agents.py` | `math_agent`, `science_agent`, `sst_agent` + tool-calling loop |
+| `agents/reflection.py` | Reflection Agent — grounds/gates teaching output before the Supervisor sees it |
+| `agents/tools.py` | `search_ncert`, `get_prerequisites`, `python_calculator` (AST-restricted) |
 | `agents/quiz_agent.py` | `quiz_generator`, `feedback_agent` |
 | `agents/prompts.py` | Strict JSON-only prompt templates |
 | `rag/ingest.py` | PDF → chunks → embeddings → FAISS index |
@@ -326,11 +370,19 @@ classDiagram
 | `pages/QuizPage.tsx` | MCQ quiz flow + `FeedbackPanel` per answer |
 | `pages/ResultsPage.tsx` | Session score + weak topics + revision option |
 | `store/sessionStore.ts` | Zustand store — single source of truth for client state |
-| `api/client.ts` | Typed fetch wrappers for all API endpoints |
+| `api/client.ts` | Typed fetch wrappers for all API endpoints; attaches the Clerk bearer token |
+| `api/authToken.ts` | Module-level bridge so the non-React API client can read the current Clerk token |
+| `ErrorBoundary.tsx` | Top-level React error boundary |
+| `main.tsx` | `ClerkProvider` + signed-in/signed-out gating (`<Show>`) |
 
 ---
 
 ## API Reference
+
+All endpoints below except `/health` require `Authorization: Bearer <clerk-session-jwt>`.
+The authenticated Clerk user id is used as `student_id` — it is never taken
+from the request body/path/query, and any path `student_id` that doesn't
+match the token's identity gets a 403.
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -343,10 +395,10 @@ classDiagram
 | GET | `/student/{student_id}` | Get persistent profile from Postgres |
 | POST | `/student/{student_id}/update` | Merge session results into profile |
 | POST | `/documents/upload` | Upload a PDF/TXT/MD, chunk + embed + index it, auto-extract a topic list |
-| GET | `/documents?student_id=` | List a student's uploaded documents |
+| GET | `/documents` | List the authenticated student's uploaded documents |
 | GET | `/documents/{document_id}` | Document detail, including its topic list |
 | DELETE | `/documents/{document_id}` | Delete a document's index files + DB row |
-| GET | `/health` | Redis + Postgres connectivity check |
+| GET | `/health` | Redis + Postgres connectivity check (unauthenticated) |
 
 ---
 
@@ -394,8 +446,32 @@ Each document also gets its own FAISS index under `rag/index/custom/<document_id
 | `EMBEDDING_PROVIDER` | `huggingface` or `google` |
 | `HF_API_TOKEN` | Hugging Face token |
 | `HF_EMBEDDING_MODEL` | e.g. `microsoft/harrier-oss-v1-0.6b` |
+| `CLERK_ISSUER` | Clerk instance Frontend API URL, e.g. `https://your-instance.clerk.accounts.dev` — used to fetch the public JWKS for JWT verification (no secret key needed) |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (frontend) |
 
+---
 
+## Limitations & Future Work
 
+- **No automated tests.** Verification during Phase 1 was manual/mocked-Groq
+  rather than a pytest suite — Phase 5 of the master plan covers adding real
+  unit/integration tests and CI.
+- **Tools aren't independently traceable.** `search_ncert` / `get_prerequisites`
+  / `python_calculator` run as an in-node loop inside the Learning Agent, not
+  as separate LangGraph nodes/edges — tracing (Phase 4, LangSmith) will see
+  them as nested tool-call messages rather than graph steps unless revisited.
+- **`quiz_generator` doesn't read the persistent Memory model** — it only
+  looks at the current session's `weak_topics`, not the `mastery`/
+  `revision_due` maps carried across sessions.
+- **`learning_style` has no real signal source yet** — it's stuck at a
+  `"text"` default; nothing currently infers or sets it.
+- **No streaming.** Teaching/quiz generation returns as a single JSON
+  response; Phase 3 of the master plan adds SSE streaming for the
+  generation step.
+- **`document_tutor` skips the Reflection Agent** — reflection is currently
+  scoped to the three NCERT subject agents only, by design, but an uploaded
+  document's teaching output isn't quality-gated the same way.
+- See `master_plan.md` for the full phased roadmap (Phases 3–5: streaming
+  chat, observability/evals, tests + polish).
 
 ---
