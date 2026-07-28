@@ -17,7 +17,7 @@ import os
 
 from groq import Groq
 
-from .prompts import REFLECTION_PROMPT, render_prompt
+from .prompt_registry import render_versioned
 from .state import LearningState
 from .subject_agents import _format_context, _format_student_memory, call_groq_with_retry
 
@@ -49,8 +49,8 @@ def reflection_agent(state: LearningState) -> LearningState:
     topic = state.get("topic", "")
     retry_count = int(state.get("reflection_retry_count", 0))
 
-    system_prompt = render_prompt(
-        REFLECTION_PROMPT,
+    system_prompt, prompt_version = render_versioned(
+        "reflection",
         teaching_output=json.dumps(teaching_output, ensure_ascii=False),
         context=_format_context(retrieved_context),
         chapter=state.get("chapter", ""),
@@ -65,6 +65,8 @@ def reflection_agent(state: LearningState) -> LearningState:
             REFLECTION_MODEL,
             system_prompt,
             "Audit this teaching output now.",
+            prompt_name="reflection",
+            prompt_version=prompt_version,
         )
         passed = bool(decision.get("passed", True))
         critique = str(decision.get("critique") or "")

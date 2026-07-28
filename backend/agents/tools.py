@@ -16,6 +16,8 @@ import json
 import math
 import operator
 
+from langsmith import traceable
+
 from api.prerequisites import get_prerequisites as _lookup_prerequisites
 from rag.retriever import retrieve
 
@@ -95,6 +97,7 @@ TOOL_SPECS = [
 ]
 
 
+@traceable(run_type="tool", name="search_ncert")
 def search_ncert(subject: str, grade: int, query: str, chapter: str | None = None, top_k: int = 5) -> list[dict]:
     query = (query or "").strip()
     if not query:
@@ -106,6 +109,7 @@ def search_ncert(subject: str, grade: int, query: str, chapter: str | None = Non
     return retrieve(query, subject, grade, chapter=None, top_k=top_k)
 
 
+@traceable(run_type="tool", name="get_prerequisites")
 def get_prerequisites(subject: str, topic: str) -> dict:
     return _lookup_prerequisites(subject, topic)
 
@@ -152,6 +156,7 @@ def _eval_node(node: ast.AST):
     raise _UnsafeExpression(f"Unsupported expression element: {type(node).__name__}")
 
 
+@traceable(run_type="tool", name="python_calculator")
 def python_calculator(expression: str) -> dict:
     expression = (expression or "").strip()
     if not expression:

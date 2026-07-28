@@ -7,7 +7,7 @@ from groq import Groq
 
 from api.prerequisites import get_prerequisites
 
-from .prompts import SUPERVISOR_PROMPT, render_prompt
+from .prompt_registry import render_versioned
 from .state import LearningState
 from .subject_agents import call_groq_with_retry
 
@@ -171,11 +171,16 @@ def supervisor_node(state: LearningState) -> LearningState:
     prerequisites = _prerequisite_summary(state)
 
     try:
+        system_prompt, prompt_version = render_versioned(
+            "supervisor", state_summary=_state_summary(state, prerequisites)
+        )
         decision = call_groq_with_retry(
             client,
             SUPERVISOR_MODEL,
-            render_prompt(SUPERVISOR_PROMPT, state_summary=_state_summary(state, prerequisites)),
+            system_prompt,
             "Decide the next action for this turn.",
+            prompt_name="supervisor",
+            prompt_version=prompt_version,
         )
         next_action = str(decision.get("next_action", "")).strip()
         if next_action not in _VALID_ACTIONS:

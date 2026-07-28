@@ -5,13 +5,9 @@ import os
 import time
 
 from groq import APIStatusError, Groq, RateLimitError
+from langsmith import traceable
 
-from .prompts import (
-    MATH_AGENT_PROMPT,
-    SCIENCE_AGENT_PROMPT,
-    SST_AGENT_PROMPT,
-    render_prompt,
-)
+from .prompt_registry import render_versioned
 from .state import LearningState
 from .tools import TOOL_SPECS, execute_tool_call
 
@@ -21,7 +17,15 @@ TEACHING_MODEL = "llama-3.3-70b-versatile"
 MAX_TOOL_ITERATIONS = 4
 
 
-def call_groq_with_retry(client, model, system_prompt, user_message, max_attempts=3):
+def call_groq_with_retry(
+    client,
+    model,
+    system_prompt,
+    user_message,
+    max_attempts=3,
+    prompt_name: str | None = None,
+    prompt_version: int | None = None,
+):
     json_instruction = (
         "Return ONLY one syntactically valid JSON object. "
         "Use double-quoted JSON strings, arrays, booleans, and null only. "
@@ -31,15 +35,35 @@ def call_groq_with_retry(client, model, system_prompt, user_message, max_attempt
         {"role": "system", "content": f"{system_prompt}\n\n{json_instruction}"},
         {"role": "user", "content": user_message},
     ]
+
+    # Traced separately from the retry loop so LangSmith sees one LLM span per
+    # actual API call, and never sees `client` (not JSON-serializable) - only
+    # the model name and message list, mirroring the OpenAI-compatible shape
+    # LangSmith already knows how to pull token usage from. prompt_name/
+    # prompt_version (Phase 4C, agents/prompt_registry.py) land in metadata so
+    # a trace answers "which prompt version produced this?" directly.
+    @traceable(
+        run_type="llm",
+        name="groq_chat_completion",
+        metadata={
+            "ls_model_name": model,
+            "ls_provider": "groq",
+            "prompt_name": prompt_name,
+            "prompt_version": prompt_version,
+        },
+    )
+    def _completion(*, messages):
+        return client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+
     for attempt in range(1, max_attempts + 1):
         raw = ""
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.1,
-                response_format={"type": "json_object"},
-            )
+            response = _completion(messages=messages)
             raw = response.choices[0].message.content
             return json.loads(raw)
         except (RateLimitError, APIStatusError) as e:
@@ -187,6 +211,11 @@ def _retrieval_query(state: LearningState) -> str:
     return f"{topic}. {user_request}"
 
 
+@traceable(
+    run_type="llm",
+    name="groq_chat_completion_tools",
+    metadata={"ls_model_name": TEACHING_MODEL, "ls_provider": "groq"},
+)
 def _create_completion(max_attempts: int = 3, **kwargs):
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
@@ -230,7 +259,13 @@ def _dedupe_chunks(chunks: list[dict]) -> list[dict]:
     return deduped
 
 
-def _finalize_json(conversation: list[dict], model: str, max_attempts: int = 3) -> dict:
+def _finalize_json(
+    conversation: list[dict],
+    model: str,
+    max_attempts: int = 3,
+    prompt_name: str | None = None,
+    prompt_version: int | None = None,
+) -> dict:
     """Force a final JSON answer once tool use is done - used both to close out
     the loop normally and to repair a non-JSON final message."""
     for attempt in range(1, max_attempts + 1):
@@ -240,6 +275,7 @@ def _finalize_json(conversation: list[dict], model: str, max_attempts: int = 3) 
             temperature=0.1,
             tools=TOOL_SPECS,
             tool_choice="none",
+            langsmith_extra={"metadata": {"prompt_name": prompt_name, "prompt_version": prompt_version}},
         )
         raw = response.choices[0].message.content or ""
         try:
@@ -256,7 +292,7 @@ def _finalize_json(conversation: list[dict], model: str, max_attempts: int = 3) 
     raise RuntimeError("Agent failed to produce valid JSON after tool use.")
 
 
-def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: str) -> LearningState:
+def _run_subject_agent(state: LearningState, prompt_name: str, agent_name: str) -> LearningState:
     subject = state["subject"]
     grade = state["grade"]
     chapter = state.get("chapter", "")
@@ -274,8 +310,10 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
     if is_prerequisite_revision:
         topic = state["target_topic"]
 
-    system_prompt = render_prompt(
-        prompt_template,
+    # Phase 4C: render via the versioned registry so prompt_version can be
+    # tagged onto every Groq call this turn makes (LangSmith trace metadata).
+    system_prompt, prompt_version = render_versioned(
+        prompt_name,
         grade=grade,
         chapter=chapter,
         topic=topic,
@@ -334,6 +372,7 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
                 tools=TOOL_SPECS,
                 tool_choice="auto",
                 temperature=0.1,
+                langsmith_extra={"metadata": {"prompt_name": prompt_name, "prompt_version": prompt_version}},
             )
         except (RateLimitError, APIStatusError) as exc:
             if not tool_call_recovery_attempted:
@@ -355,7 +394,7 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
             # whatever context was gathered so far (tool_choice="none" below
             # shouldn't hit the same failure mode).
             print(f"Tool call failed again after a corrective retry ({exc}); forcing a final JSON answer instead.")
-            teaching_output = _finalize_json(conversation, TEACHING_MODEL)
+            teaching_output = _finalize_json(conversation, TEACHING_MODEL, prompt_name=prompt_name, prompt_version=prompt_version)
             break
         message = response.choices[0].message
         tool_calls = message.tool_calls or []
@@ -372,7 +411,7 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
                         "content": "That was not valid JSON. Return ONLY one valid JSON object now. No markdown, no tool calls, no extra text.",
                     }
                 )
-                teaching_output = _finalize_json(conversation, TEACHING_MODEL)
+                teaching_output = _finalize_json(conversation, TEACHING_MODEL, prompt_name=prompt_name, prompt_version=prompt_version)
             break
 
         conversation.append(_assistant_tool_call_message(message, tool_calls))
@@ -393,7 +432,7 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
                 "content": "You have used enough tools. Respond now with ONLY the final JSON object.",
             }
         )
-        teaching_output = _finalize_json(conversation, TEACHING_MODEL)
+        teaching_output = _finalize_json(conversation, TEACHING_MODEL, prompt_name=prompt_name, prompt_version=prompt_version)
 
     retrieved_context = _dedupe_chunks(retrieved_context)
     if not retrieved_context:
@@ -424,12 +463,12 @@ def _run_subject_agent(state: LearningState, prompt_template: str, agent_name: s
 
 
 def math_agent(state: LearningState) -> LearningState:
-    return _run_subject_agent(state, MATH_AGENT_PROMPT, "math_agent")
+    return _run_subject_agent(state, "math_agent", "math_agent")
 
 
 def science_agent(state: LearningState) -> LearningState:
-    return _run_subject_agent(state, SCIENCE_AGENT_PROMPT, "science_agent")
+    return _run_subject_agent(state, "science_agent", "science_agent")
 
 
 def sst_agent(state: LearningState) -> LearningState:
-    return _run_subject_agent(state, SST_AGENT_PROMPT, "sst_agent")
+    return _run_subject_agent(state, "sst_agent", "sst_agent")

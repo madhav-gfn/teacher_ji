@@ -250,6 +250,7 @@ async def start_session(
     student_memory = await get_student_memory(current_student_id)
 
     initial_state: LearningState = {
+        "session_id": session_id,
         "student_id": current_student_id,
         "grade": grade,
         "subject": state_subject,

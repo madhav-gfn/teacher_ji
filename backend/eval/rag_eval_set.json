@@ -1,0 +1,122 @@
+[
+  {
+    "id": "math-fractions-1",
+    "subject": "math",
+    "grade": 6,
+    "chapter": "Fractions",
+    "query": "How do you find equivalent fractions?",
+    "expected_keywords": ["fraction", "equivalent", "numerator", "denominator"]
+  },
+  {
+    "id": "math-prime-1",
+    "subject": "math",
+    "grade": 6,
+    "chapter": "Prime Time",
+    "query": "What is a prime number and how is it different from a composite number?",
+    "expected_keywords": ["prime", "factor", "composite"]
+  },
+  {
+    "id": "math-perimeter-1",
+    "subject": "math",
+    "grade": 6,
+    "chapter": "Perimeter and Area",
+    "query": "How do I calculate the perimeter of a rectangle?",
+    "expected_keywords": ["perimeter", "rectangle", "length", "breadth"]
+  },
+  {
+    "id": "math-angles-1",
+    "subject": "math",
+    "grade": 6,
+    "chapter": "Lines and Angles",
+    "query": "What are the different types of angles?",
+    "expected_keywords": ["angle", "acute", "obtuse", "right"]
+  },
+  {
+    "id": "math-symmetry-1",
+    "subject": "math",
+    "grade": 6,
+    "chapter": "Symmetry",
+    "query": "What is a line of symmetry in a shape?",
+    "expected_keywords": ["symmetry", "line", "mirror"]
+  },
+  {
+    "id": "science-magnets-1",
+    "subject": "science",
+    "grade": 6,
+    "chapter": "Exploring Magnets",
+    "query": "What are the poles of a magnet and how do they behave?",
+    "expected_keywords": ["magnet", "pole", "attract"]
+  },
+  {
+    "id": "science-materials-1",
+    "subject": "science",
+    "grade": 6,
+    "chapter": "Materials Around Us",
+    "query": "What are the different states of matter?",
+    "expected_keywords": ["solid", "liquid", "gas", "matter"]
+  },
+  {
+    "id": "science-water-cycle-1",
+    "subject": "science",
+    "grade": 6,
+    "chapter": "A Journey through States of Water",
+    "query": "What is the water cycle and how does evaporation work?",
+    "expected_keywords": ["evaporation", "condensation", "water"]
+  },
+  {
+    "id": "science-nutrition-1",
+    "subject": "science",
+    "grade": 6,
+    "chapter": "Mindful Eating: A Path to a Healthy Body",
+    "query": "What is a balanced diet and why do we need nutrients?",
+    "expected_keywords": ["nutrient", "diet", "food"]
+  },
+  {
+    "id": "science-measurement-1",
+    "subject": "science",
+    "grade": 6,
+    "chapter": "Measurement of Length and Motion",
+    "query": "What are the standard units used to measure length?",
+    "expected_keywords": ["measurement", "unit", "length", "metre"]
+  },
+  {
+    "id": "sst-latitude-1",
+    "subject": "sst",
+    "grade": 6,
+    "chapter": "Locating Places on the Earth",
+    "query": "What are latitudes and longitudes used for on a map?",
+    "expected_keywords": ["latitude", "longitude", "map"]
+  },
+  {
+    "id": "sst-panchayat-1",
+    "subject": "sst",
+    "grade": 6,
+    "chapter": "Grassroots Democracy - Part 2 Local Government in Rural Areas",
+    "query": "What is a Gram Panchayat and what does it do?",
+    "expected_keywords": ["panchayat", "gram", "village"]
+  },
+  {
+    "id": "sst-indus-valley-1",
+    "subject": "sst",
+    "grade": 6,
+    "chapter": "The Beginnings of Indian Civilisation",
+    "query": "What do we know about the Indus Valley Civilisation?",
+    "expected_keywords": ["indus", "civilisation", "harappa"]
+  },
+  {
+    "id": "sst-oceans-1",
+    "subject": "sst",
+    "grade": 6,
+    "chapter": "Oceans and Continents",
+    "query": "What are the major oceans and continents of the world?",
+    "expected_keywords": ["ocean", "continent"]
+  },
+  {
+    "id": "sst-economic-activities-1",
+    "subject": "sst",
+    "grade": 6,
+    "chapter": "Economic Activities Around Us",
+    "query": "What are the primary, secondary and tertiary economic sectors?",
+    "expected_keywords": ["primary", "secondary", "tertiary", "sector"]
+  }
+]

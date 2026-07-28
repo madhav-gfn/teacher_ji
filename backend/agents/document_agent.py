@@ -18,7 +18,7 @@ import os
 from groq import Groq
 from rag.retriever import retrieve_document
 
-from .prompts import GENERIC_TUTOR_PROMPT, TOPIC_EXTRACTION_PROMPT, render_prompt
+from .prompt_registry import render_versioned
 from .state import LearningState
 from .subject_agents import (
     _build_user_message,
@@ -79,8 +79,8 @@ def document_tutor(state: LearningState) -> LearningState:
         }
 
     context = _format_context(retrieved_context)
-    system_prompt = render_prompt(
-        GENERIC_TUTOR_PROMPT,
+    system_prompt, prompt_version = render_versioned(
+        "generic_tutor",
         grade=state.get("grade") or "general",
         context=context,
         chapter=state.get("chapter", ""),
@@ -92,6 +92,8 @@ def document_tutor(state: LearningState) -> LearningState:
         "llama-3.3-70b-versatile",
         system_prompt,
         _build_user_message(state),
+        prompt_name="generic_tutor",
+        prompt_version=prompt_version,
     )
 
     messages = list(state.get("messages", []))
@@ -119,12 +121,14 @@ def extract_topics(chunks: list[dict], filename: str) -> tuple[str, list[str]]:
     sample = "\n\n".join(str(chunk.get("text", "")).strip() for chunk in sample_chunks)
     sample = sample[:TOPIC_SAMPLE_CHARS]
 
-    system_prompt = render_prompt(TOPIC_EXTRACTION_PROMPT, filename=filename, sample=sample)
+    system_prompt, prompt_version = render_versioned("topic_extraction", filename=filename, sample=sample)
     payload = call_groq_with_retry(
         client,
         "llama-3.3-70b-versatile",
         system_prompt,
         "Generate the title and topic list now.",
+        prompt_name="topic_extraction",
+        prompt_version=prompt_version,
     )
 
     title = str(payload.get("title") or filename).strip() or filename

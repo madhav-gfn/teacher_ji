@@ -5,7 +5,7 @@ import os
 from groq import Groq
 from rag.retriever import retrieve, retrieve_document
 
-from .prompts import FEEDBACK_AGENT_PROMPT, QUIZ_GENERATOR_PROMPT, render_prompt
+from .prompt_registry import render_versioned
 from .state import LearningState
 from .subject_agents import call_groq_with_retry
 
@@ -109,8 +109,8 @@ def quiz_generator(state: LearningState) -> LearningState:
     difficulty = _difficulty_for(state)
     num_questions = _num_questions_for(state)
     source_label = "study material" if state.get("document_id") else "NCERT"
-    system_prompt = render_prompt(
-        QUIZ_GENERATOR_PROMPT,
+    system_prompt, prompt_version = render_versioned(
+        "quiz_generator",
         grade=state["grade"],
         subject=state["subject"],
         context=context,
@@ -128,6 +128,8 @@ def quiz_generator(state: LearningState) -> LearningState:
         "llama-3.3-70b-versatile",
         system_prompt,
         user_request,
+        prompt_name="quiz_generator",
+        prompt_version=prompt_version,
     )
     quiz_questions = _normalize_questions(list(quiz_payload.get("questions", [])))
 
@@ -156,8 +158,8 @@ def feedback_agent(state: LearningState) -> LearningState:
         raise IndexError("current_question_index is out of range for quiz_questions.")
 
     current_question = dict(questions[current_index])
-    system_prompt = render_prompt(
-        FEEDBACK_AGENT_PROMPT,
+    system_prompt, prompt_version = render_versioned(
+        "feedback_agent",
         question=current_question.get("question", ""),
         correct_answer=current_question.get("correct_answer", ""),
         explanation=current_question.get("explanation", ""),
@@ -170,6 +172,8 @@ def feedback_agent(state: LearningState) -> LearningState:
         "llama-3.3-70b-versatile",
         system_prompt,
         "Evaluate this answer.",
+        prompt_name="feedback_agent",
+        prompt_version=prompt_version,
     )
 
     current_question["student_answer"] = state.get("student_answer", "")
