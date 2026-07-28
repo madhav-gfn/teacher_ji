@@ -295,23 +295,23 @@ export const subjectMeta: Record<
 > = {
   math: {
     label: "Mathematics",
-    accent: "text-purple-700 bg-purple-50 border-purple-100",
-    softAccent: "bg-purple-50 text-purple-700",
+    accent: "text-purple-700 bg-purple-50 border-purple-100 dark:text-purple-300 dark:bg-purple-950/40 dark:border-purple-900",
+    softAccent: "bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300",
   },
   science: {
     label: "Science",
-    accent: "text-teal-700 bg-teal-50 border-teal-100",
-    softAccent: "bg-teal-50 text-teal-700",
+    accent: "text-teal-700 bg-teal-50 border-teal-100 dark:text-teal-300 dark:bg-teal-950/40 dark:border-teal-900",
+    softAccent: "bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300",
   },
   sst: {
     label: "Social Studies",
-    accent: "text-amber-700 bg-amber-50 border-amber-100",
-    softAccent: "bg-amber-50 text-amber-700",
+    accent: "text-amber-700 bg-amber-50 border-amber-100 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900",
+    softAccent: "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
   },
   custom: {
     label: "Your Material",
-    accent: "text-orange-700 bg-orange-50 border-orange-100",
-    softAccent: "bg-orange-50 text-orange-700",
+    accent: "text-orange-700 bg-orange-50 border-orange-100 dark:text-orange-300 dark:bg-orange-950/40 dark:border-orange-900",
+    softAccent: "bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300",
   },
 };
 

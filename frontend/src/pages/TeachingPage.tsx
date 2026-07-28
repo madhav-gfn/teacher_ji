@@ -109,9 +109,9 @@ export function TeachingPage() {
 
   if (!sessionId || !subject || !chapter || !currentTopic || !teachingOutput) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6">
-        <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-sm">
-          <p className="text-lg font-semibold text-gray-900">No active teaching session.</p>
+      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6 dark:bg-gray-950">
+        <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">No active teaching session.</p>
           <button
             type="button"
             onClick={() => setSession({ mode: "selection" })}
@@ -125,7 +125,7 @@ export function TeachingPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-stone-50">
+    <div className="flex min-h-screen flex-col bg-stone-50 dark:bg-gray-950 lg:flex-row">
       <Sidebar
         subject={subject}
         chapter={chapter}
@@ -138,11 +138,11 @@ export function TeachingPage() {
         <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0">
             {isAdvancing || isRefreshing ? (
-              <div className="mb-4 rounded-2xl border border-purple-100 bg-purple-50 p-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-purple-700">
+              <div className="mb-4 rounded-2xl border border-purple-100 bg-purple-50 p-5 dark:border-purple-900 dark:bg-purple-950/40">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-purple-700 dark:text-purple-300">
                   {isAdvancing ? "Teaching the next topic..." : "Rebuilding the explanation..."}
                 </p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-purple-950">
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-purple-950 dark:text-purple-100">
                   {streamPreview || "Thinking..."}
                 </p>
               </div>
@@ -169,11 +169,11 @@ export function TeachingPage() {
               </motion.div>
             </AnimatePresence>
 
-            {nextTopicError ? <p className="mt-4 text-sm text-red-600">{nextTopicError}</p> : null}
-            {explainError ? <p className="mt-4 text-sm text-red-600">{explainError}</p> : null}
+            {nextTopicError ? <p className="mt-4 text-sm text-red-600 dark:text-red-400">{nextTopicError}</p> : null}
+            {explainError ? <p className="mt-4 text-sm text-red-600 dark:text-red-400">{explainError}</p> : null}
           </div>
 
-          <div className="h-[calc(100vh-6rem)] lg:sticky lg:top-6">
+          <div className="h-[70vh] lg:sticky lg:top-6 lg:h-[calc(100vh-6rem)]">
             <ChatPanel />
           </div>
         </div>

@@ -95,9 +95,9 @@ export function QuizPage() {
 
   if (!sessionId) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6">
-        <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
-          <p className="text-lg font-semibold text-gray-900">No quiz session found.</p>
+      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6 dark:bg-gray-950">
+        <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">No quiz session found.</p>
         </div>
       </div>
     );
@@ -105,15 +105,15 @@ export function QuizPage() {
 
   if (quizQuery.isLoading || !currentQuestion) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6">
-        <div className="w-full max-w-xl rounded-3xl border border-gray-100 bg-white p-10 shadow-textbook">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-purple-700">
+      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6 dark:bg-gray-950">
+        <div className="w-full max-w-xl rounded-3xl border border-gray-100 bg-white p-10 shadow-textbook dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-purple-700 dark:text-purple-300">
             Quiz Mode
           </p>
-          <h1 className="mt-4 text-3xl font-bold text-gray-950">
+          <h1 className="mt-4 text-3xl font-bold text-gray-950 dark:text-white">
             Preparing your quiz based on what you just learned...
           </h1>
-          <div className="mt-8 h-3 overflow-hidden rounded-full bg-gray-100">
+          <div className="mt-8 h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
             <motion.div
               className="h-full rounded-full bg-purple-600"
               initial={{ width: "10%" }}
@@ -122,7 +122,7 @@ export function QuizPage() {
             />
           </div>
           {quizQuery.error ? (
-            <p className="mt-4 text-sm text-red-600">{quizQuery.error.message}</p>
+            <p className="mt-4 text-sm text-red-600 dark:text-red-400">{quizQuery.error.message}</p>
           ) : null}
         </div>
       </div>
@@ -130,23 +130,23 @@ export function QuizPage() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 px-6 py-8">
+    <div className="min-h-screen bg-stone-50 px-6 py-8 dark:bg-gray-950">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-6 rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm">
+        <div className="mb-6 rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-gray-500">
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
                 Chapter Quiz
               </p>
-              <h1 className="mt-2 text-2xl font-bold text-gray-950">
+              <h1 className="mt-2 text-2xl font-bold text-gray-950 dark:text-white">
                 Question {currentQuestionIndex + 1} of {questions.length}
               </h1>
             </div>
-            <span className="rounded-full bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700">
+            <span className="rounded-full bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
               {progress}% through quiz
             </span>
           </div>
-          <div className="mt-5 h-2 overflow-hidden rounded-full bg-gray-100">
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
             <div
               className="h-full rounded-full bg-purple-600 transition-all"
               style={{ width: `${progress}%` }}
@@ -186,7 +186,7 @@ export function QuizPage() {
         ) : null}
 
         {submitAnswer.error ? (
-          <p className="mt-4 text-sm text-red-600">{submitAnswer.error.message}</p>
+          <p className="mt-4 text-sm text-red-600 dark:text-red-400">{submitAnswer.error.message}</p>
         ) : null}
       </div>
     </div>

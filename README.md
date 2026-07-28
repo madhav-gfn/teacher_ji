@@ -34,7 +34,9 @@ dead ends, curriculum mismatches) live in [ENGINEERING_LOG.md](ENGINEERING_LOG.m
 - [API Reference](#api-reference)
 - [Data & Persistence](#data-models--persistence)
 - [Environment Variables](#environment-variables)
+- [Testing & CI](#testing--ci)
 - [Limitations & Future Work](#limitations--future-work)
+- [Contributing](#contributing)
 
 ---
 
@@ -68,6 +70,8 @@ teaching output before the student ever sees it.
 - Multi-agent design: a Supervisor plans each turn; subject-specific Learning Agents (math, science, SST) teach with tool access; a Reflection Agent gates their output; a Memory Agent tracks per-student mastery.
 - Short-lived sessions: Upstash Redis stores `LearningState` per session (4h TTL); NeonDB Postgres stores persistent student profiles.
 - Authenticated: Clerk-backed accounts — every API request is tied to a verified user, not a client-generated ID.
+- Live streaming: teaching generation streams token-by-token over SSE into a chat panel alongside the structured lesson card, with Markdown/KaTeX rendering.
+- Observable: every LLM call is traced (LangSmith) and tagged with the prompt version that produced it; two standalone eval scripts measure RAG recall and Reflection precision/recall against seeded test sets.
 
 ---
 
@@ -262,7 +266,9 @@ classDiagram
 
 The core of this project is the agentic loop each teaching turn runs
 through — not the CRUD layer around it. Every turn passes through four
-cooperating pieces before the student sees anything:
+cooperating pieces before the student sees anything. The summaries below are
+the short version; [docs/adr/](docs/adr/README.md) has the full
+context/alternatives-considered/consequences writeup for each one.
 
 ```mermaid
 flowchart TD
@@ -451,27 +457,54 @@ Each document also gets its own FAISS index under `rag/index/custom/<document_id
 
 ---
 
+## Testing & CI
+
+```bash
+cd backend && pytest              # unit + integration tests, mocked Groq, no live calls
+cd frontend && npm run build      # tsc -b type-check + production build
+python scripts/test_e2e.py        # live smoke test against a running backend (real Groq/DB)
+```
+
+`backend/tests/` covers Supervisor decision parsing (including the
+prerequisite-eligibility guardrail), the three tools (`python_calculator`'s
+AST whitelist, `search_ncert`'s fallback behavior, `execute_tool_call`'s
+error handling), Reflection's pass/retry/force-accept/fail-open paths, and
+an integration test driving the full Supervisor → Learning Agent →
+Reflection → Supervisor loop and the quiz loop end to end through
+`agents/graph.py:run_session`. `.github/workflows/ci.yml` runs the backend
+suite and the frontend build on every push/PR to `main`. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the pattern to follow when adding
+more.
+
+---
+
 ## Limitations & Future Work
 
-- **No automated tests.** Verification during Phase 1 was manual/mocked-Groq
-  rather than a pytest suite — Phase 5 of the master plan covers adding real
-  unit/integration tests and CI.
-- **Tools aren't independently traceable.** `search_ncert` / `get_prerequisites`
-  / `python_calculator` run as an in-node loop inside the Learning Agent, not
-  as separate LangGraph nodes/edges — tracing (Phase 4, LangSmith) will see
-  them as nested tool-call messages rather than graph steps unless revisited.
 - **`quiz_generator` doesn't read the persistent Memory model** — it only
   looks at the current session's `weak_topics`, not the `mastery`/
   `revision_due` maps carried across sessions.
 - **`learning_style` has no real signal source yet** — it's stuck at a
   `"text"` default; nothing currently infers or sets it.
-- **No streaming.** Teaching/quiz generation returns as a single JSON
-  response; Phase 3 of the master plan adds SSE streaming for the
-  generation step.
 - **`document_tutor` skips the Reflection Agent** — reflection is currently
   scoped to the three NCERT subject agents only, by design, but an uploaded
   document's teaching output isn't quality-gated the same way.
-- See `master_plan.md` for the full phased roadmap (Phases 3–5: streaming
-  chat, observability/evals, tests + polish).
+- **Reflection's precision is a known, measured gap, not a guess.**
+  `backend/eval/reflection_eval.py` measured 100% recall but only 50%
+  precision against a seeded set of good/bad teaching outputs — it
+  over-rejects grounded paraphrases and demands scaffolding even for
+  students with no mastery data at all. Tracked, not yet tuned (see
+  [docs/adr/0002-reflection-scope.md](docs/adr/0002-reflection-scope.md)).
+- **No code-splitting.** The frontend bundle is ~900KB post-minification
+  (mostly KaTeX font assets) — one Vite chunk-size warning, not yet
+  addressed.
+- See `master_plan.md` for the full phased build history, including what
+  each phase deliberately left out of scope and why.
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for project layout, local setup, the
+test-writing pattern, and where architecture decisions get recorded.
 
 ---

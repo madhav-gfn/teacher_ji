@@ -113,17 +113,17 @@ export function ChatPanel() {
   }
 
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-gray-100 bg-white shadow-sm">
-      <div className="border-b border-gray-100 px-5 py-4">
-        <p className="text-sm font-semibold text-gray-900">Chat about {currentTopic}</p>
-        <p className="text-xs text-gray-500">
+    <div className="flex h-full flex-col rounded-2xl border border-gray-100 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
+      <div className="border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Chat about {currentTopic}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">
           Ask a follow-up any time - it goes through the same teaching agent, streamed live.
         </p>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
         {messages.length === 0 ? (
-          <p className="text-sm text-gray-400">No messages yet. Ask something about this topic.</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">No messages yet. Ask something about this topic.</p>
         ) : (
           messages.map((message) => (
             <div key={message.id} className={message.role === "user" ? "flex justify-end" : "flex justify-start"}>
@@ -132,8 +132,8 @@ export function ChatPanel() {
                   message.role === "user"
                     ? "bg-purple-600 text-white"
                     : message.status === "error"
-                      ? "border border-red-200 bg-red-50 text-red-700"
-                      : "border border-gray-100 bg-gray-50 text-gray-800"
+                      ? "border border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                      : "border border-gray-100 bg-gray-50 text-gray-800 dark:border-gray-800 dark:bg-gray-800/60 dark:text-gray-200"
                 }`}
               >
                 {message.role === "assistant" ? (
@@ -142,7 +142,7 @@ export function ChatPanel() {
                   <p className="leading-6">{message.content}</p>
                 )}
                 {message.status === "streaming" ? (
-                  <span className="mt-1 inline-block h-3 w-1.5 animate-pulse bg-gray-400 align-text-bottom" />
+                  <span className="mt-1 inline-block h-3 w-1.5 animate-pulse bg-gray-400 align-text-bottom dark:bg-gray-500" />
                 ) : null}
               </div>
             </div>
@@ -150,7 +150,7 @@ export function ChatPanel() {
         )}
       </div>
 
-      <div className="border-t border-gray-100 p-4">
+      <div className="border-t border-gray-100 p-4 dark:border-gray-800">
         <div className="flex items-end gap-2">
           <textarea
             value={input}
@@ -162,7 +162,7 @@ export function ChatPanel() {
               }
             }}
             placeholder="Ask a question about this topic..."
-            className="min-h-11 max-h-32 flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-purple-300 focus:bg-white focus:ring-2 focus:ring-purple-100"
+            className="min-h-11 max-h-32 flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-purple-300 focus:bg-white focus:ring-2 focus:ring-purple-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-purple-700 dark:focus:bg-gray-900"
           />
           <button
             type="button"

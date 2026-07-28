@@ -80,24 +80,24 @@ export function DocumentsPage() {
   const documents = documentsQuery.data ?? [];
 
   return (
-    <div className="min-h-screen bg-stone-50 px-6 py-10">
+    <div className="min-h-screen bg-stone-50 px-6 py-10 dark:bg-gray-950">
       <div className="mx-auto max-w-4xl">
         <button
           type="button"
           onClick={() => setMode("selection")}
-          className="mb-6 text-sm font-semibold text-purple-700 hover:text-purple-900"
+          className="mb-6 text-sm font-semibold text-purple-700 hover:text-purple-900 dark:text-purple-300 dark:hover:text-purple-200"
         >
           ← Back to NCERT curriculum
         </button>
 
-        <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-textbook">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-700">
+        <div className="rounded-3xl border border-gray-100 bg-white p-8 shadow-textbook dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-orange-700 dark:text-orange-300">
             Your Material
           </p>
-          <h1 className="mt-3 text-3xl font-extrabold text-gray-950">
+          <h1 className="mt-3 text-3xl font-extrabold text-gray-950 dark:text-white">
             Upload notes, study them like a chapter.
           </h1>
-          <p className="mt-3 max-w-xl text-base leading-7 text-gray-600">
+          <p className="mt-3 max-w-xl text-base leading-7 text-gray-600 dark:text-gray-400">
             Upload a PDF, text, or markdown file. We'll organize it into topics, then teach and
             quiz you from your own material — grounded only in what you uploaded.
           </p>
@@ -115,15 +115,17 @@ export function DocumentsPage() {
             }}
             onClick={() => fileInputRef.current?.click()}
             className={`mt-8 cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition ${
-              dragActive ? "border-orange-400 bg-orange-50" : "border-gray-200 bg-gray-50"
+              dragActive
+                ? "border-orange-400 bg-orange-50 dark:border-orange-600 dark:bg-orange-950/30"
+                : "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/40"
             }`}
           >
-            <p className="text-base font-semibold text-gray-800">
+            <p className="text-base font-semibold text-gray-800 dark:text-gray-200">
               {uploadMutation.isPending
                 ? "Uploading and organizing your material…"
                 : "Drag a file here, or click to browse"}
             </p>
-            <p className="mt-2 text-sm text-gray-500">PDF, TXT, or MD — up to 20 MB</p>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">PDF, TXT, or MD — up to 20 MB</p>
             <input
               ref={fileInputRef}
               type="file"
@@ -138,15 +140,15 @@ export function DocumentsPage() {
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Optional title for this upload"
-            className="mt-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+            className="mt-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:focus:border-orange-600"
           />
 
           {uploadMutation.error ? (
-            <p className="mt-3 text-sm text-red-600">{uploadMutation.error.message}</p>
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{uploadMutation.error.message}</p>
           ) : null}
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <p className="text-sm font-semibold text-gray-700">Explain at level:</p>
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Explain at level:</p>
             {[6, 7, 8].map((item) => (
               <button
                 key={item}
@@ -154,8 +156,8 @@ export function DocumentsPage() {
                 onClick={() => setGrade(item)}
                 className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
                   grade === item
-                    ? "border-orange-300 bg-orange-50 text-orange-700"
-                    : "border-gray-200 text-gray-600 hover:border-orange-200"
+                    ? "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-700 dark:bg-orange-950/40 dark:text-orange-300"
+                    : "border-gray-200 text-gray-600 hover:border-orange-200 dark:border-gray-700 dark:text-gray-400 dark:hover:border-orange-700"
                 }`}
               >
                 Class {item}
@@ -164,14 +166,14 @@ export function DocumentsPage() {
           </div>
         </div>
 
-        <div className="mt-8 rounded-3xl border border-gray-100 bg-white p-8 shadow-textbook">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-gray-500">
+        <div className="mt-8 rounded-3xl border border-gray-100 bg-white p-8 shadow-textbook dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-gray-500 dark:text-gray-400">
             Your Library
           </p>
           {documentsQuery.isLoading ? (
-            <p className="mt-4 text-sm text-gray-500">Loading…</p>
+            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Loading…</p>
           ) : documents.length === 0 ? (
-            <p className="mt-4 text-sm text-gray-500">
+            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
               No uploads yet. Add one above to get started.
             </p>
           ) : (
@@ -179,11 +181,11 @@ export function DocumentsPage() {
               {documents.map((doc) => (
                 <div
                   key={doc.document_id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-5"
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-5 dark:border-gray-800 dark:bg-gray-800/40"
                 >
                   <div>
-                    <p className="text-base font-semibold text-gray-950">{doc.title}</p>
-                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-gray-500">
+                    <p className="text-base font-semibold text-gray-950 dark:text-white">{doc.title}</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
                       {doc.topic_count} topics · {doc.chunk_count} chunks
                     </p>
                   </div>
@@ -199,7 +201,7 @@ export function DocumentsPage() {
                     <button
                       type="button"
                       onClick={() => deleteMutation.mutate(doc.document_id)}
-                      className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:border-red-200 hover:text-red-600"
+                      className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:border-red-200 hover:text-red-600 dark:border-gray-700 dark:text-gray-400 dark:hover:border-red-800 dark:hover:text-red-400"
                     >
                       Delete
                     </button>
@@ -209,7 +211,7 @@ export function DocumentsPage() {
             </div>
           )}
           {startFromDocument.error ? (
-            <p className="mt-3 text-sm text-red-600">{startFromDocument.error.message}</p>
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{startFromDocument.error.message}</p>
           ) : null}
         </div>
       </div>

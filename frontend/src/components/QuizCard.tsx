@@ -27,32 +27,32 @@ export function QuizCard({ question, feedback, isSubmitting, onSubmit }: QuizCar
 
   const optionState = (letter: string) => {
     if (!feedback) {
-      return "border-purple-200 bg-white text-gray-900 hover:border-purple-500";
+      return "border-purple-200 bg-white text-gray-900 hover:border-purple-500 dark:border-purple-800 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-purple-500";
     }
 
     if (letter === correctAnswer) {
-      return "border-green-200 bg-green-500 text-white";
+      return "border-green-200 bg-green-500 text-white dark:border-green-800";
     }
 
     if (letter === selectedOption && letter !== correctAnswer) {
-      return "border-red-200 bg-red-500 text-white";
+      return "border-red-200 bg-red-500 text-white dark:border-red-800";
     }
 
-    return "border-gray-200 bg-gray-50 text-gray-400";
+    return "border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-500";
   };
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-textbook">
-      <div className="flex items-center justify-between gap-4">
-        <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-purple-700">
+    <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-textbook dark:border-gray-800 dark:bg-gray-900">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
           {question.difficulty}
         </span>
-        <span className="text-xs font-medium uppercase tracking-[0.2em] text-gray-500">
+        <span className="text-xs font-medium uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
           Concept: {question.concept_tested}
         </span>
       </div>
 
-      <h2 className="mt-5 text-2xl font-bold leading-9 text-gray-950">{question.question}</h2>
+      <h2 className="mt-5 text-2xl font-bold leading-9 text-gray-950 dark:text-white">{question.question}</h2>
 
       {isMcq ? (
         <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -81,15 +81,15 @@ export function QuizCard({ question, feedback, isSubmitting, onSubmit }: QuizCar
           })}
         </div>
       ) : (
-        <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50 p-5">
-          <p className="text-sm font-semibold text-amber-900">
+        <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50 p-5 dark:border-amber-900 dark:bg-amber-950/30">
+          <p className="text-sm font-semibold text-amber-900 dark:text-amber-300">
             The backend returned a short-answer question. The board still supports it safely.
           </p>
           <textarea
             value={typedAnswer}
             onChange={(event) => setTypedAnswer(event.target.value)}
             disabled={isSubmitting || Boolean(feedback)}
-            className="mt-4 min-h-28 w-full rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none focus:border-amber-400"
+            className="mt-4 min-h-28 w-full rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm outline-none focus:border-amber-400 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-200 dark:focus:border-amber-600"
             placeholder="Type your answer"
           />
           <button

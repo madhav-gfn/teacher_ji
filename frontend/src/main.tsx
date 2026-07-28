@@ -1,13 +1,20 @@
-import { ClerkProvider, Show, SignIn, useAuth } from "@clerk/react";
+import { ClerkProvider, Show, useAuth } from "@clerk/react";
 import React, { useEffect, type ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { ThemeToggle } from "./components/ThemeToggle";
+import { LandingPage } from "./pages/LandingPage";
 import { setAuthTokenGetter } from "./api/authToken";
 import { useSessionStore } from "./store/sessionStore";
 import "./index.css";
 import "katex/dist/katex.min.css";
+import { applyTheme, getInitialTheme } from "./theme";
+
+// Applied before the first render, not inside a component, so there is no
+// light-mode flash for a user whose stored/OS preference is dark.
+applyTheme(getInitialTheme());
 
 const queryClient = new QueryClient();
 
@@ -39,15 +46,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <ClerkProvider publishableKey={clerkPublishableKey} afterSignOutUrl="/">
         <QueryClientProvider client={queryClient}>
+          <ThemeToggle />
           <Show when="signed-in">
             <AuthBridge>
               <App />
             </AuthBridge>
           </Show>
           <Show when="signed-out">
-            <div className="flex min-h-screen items-center justify-center">
-              <SignIn />
-            </div>
+            <LandingPage />
           </Show>
         </QueryClientProvider>
       </ClerkProvider>

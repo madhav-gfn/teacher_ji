@@ -29,7 +29,7 @@ export function Markdown({ children, className }: MarkdownProps) {
             <ol className="list-decimal space-y-1 pl-5">{listChildren}</ol>
           ),
           code: ({ children: codeChildren }) => (
-            <code className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-[0.9em]">
+            <code className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/10">
               {codeChildren}
             </code>
           ),

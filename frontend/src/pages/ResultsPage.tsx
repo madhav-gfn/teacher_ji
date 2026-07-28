@@ -105,9 +105,9 @@ export function ResultsPage() {
 
   if (!grade || !subject || !chapter || !sessionId) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6">
-        <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
-          <p className="text-lg font-semibold text-gray-900">No results are available yet.</p>
+      <div className="flex min-h-screen items-center justify-center bg-stone-50 p-6 dark:bg-gray-950">
+        <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">No results are available yet.</p>
         </div>
       </div>
     );
@@ -116,22 +116,22 @@ export function ResultsPage() {
   const meta = subjectMeta[subject];
 
   return (
-    <div className="min-h-screen bg-stone-50 px-6 py-8">
+    <div className="min-h-screen bg-stone-50 px-6 py-8 dark:bg-gray-950">
       <div className="mx-auto max-w-6xl space-y-6">
-        <section className="rounded-3xl border border-gray-100 bg-white p-8 shadow-textbook">
+        <section className="rounded-3xl border border-gray-100 bg-white p-8 shadow-textbook dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-gray-500">
+              <p className="text-sm font-semibold uppercase tracking-[0.28em] text-gray-500 dark:text-gray-400">
                 Session Results
               </p>
-              <h1 className="mt-4 text-3xl font-bold text-gray-950">{chapter}</h1>
+              <h1 className="mt-4 text-3xl font-bold text-gray-950 dark:text-white">{chapter}</h1>
               <p className={`mt-3 rounded-full px-4 py-2 text-sm font-semibold ${meta.softAccent}`}>
                 {meta.label}
               </p>
             </div>
 
-            <div className="rounded-3xl border border-gray-100 bg-gray-50 px-8 py-6 text-center">
-              <p className="text-xs uppercase tracking-[0.24em] text-gray-500">Session score</p>
+            <div className="rounded-3xl border border-gray-100 bg-gray-50 px-8 py-6 text-center dark:border-gray-800 dark:bg-gray-800/40">
+              <p className="text-xs uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">Session score</p>
               <p className={`mt-3 text-6xl font-extrabold ${scoreClasses(scorePercent)}`}>
                 {scorePercent}%
               </p>
@@ -140,48 +140,48 @@ export function ResultsPage() {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-2">
-          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-gray-950">Topics mastered</h2>
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <h2 className="text-xl font-bold text-gray-950 dark:text-white">Topics mastered</h2>
             <div className="mt-5 flex flex-wrap gap-3">
               {masteredTopics.length ? (
                 masteredTopics.map((topic) => (
                   <span
                     key={topic}
-                    className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-sm font-semibold text-green-700"
+                    className="rounded-full border border-green-200 bg-green-50 px-4 py-2 text-sm font-semibold text-green-700 dark:border-green-900 dark:bg-green-950/30 dark:text-green-300"
                   >
                     {topic}
                   </span>
                 ))
               ) : (
-                <p className="text-sm text-gray-500">Mastered topics will appear after stronger quiz performance.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Mastered topics will appear after stronger quiz performance.</p>
               )}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-            <h2 className="text-xl font-bold text-gray-950">Topics to revise</h2>
+          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+            <h2 className="text-xl font-bold text-gray-950 dark:text-white">Topics to revise</h2>
             <div className="mt-5 flex flex-wrap gap-3">
               {weakTopics.length ? (
                 weakTopics.map((topic) => (
                   <span
                     key={topic}
-                    className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700"
+                    className="rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
                   >
                     {topic}
                   </span>
                 ))
               ) : (
-                <p className="text-sm text-gray-500">No weak topics identified in this session.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">No weak topics identified in this session.</p>
               )}
             </div>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <h2 className="text-xl font-bold text-gray-950">Topic mastery</h2>
+        <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-xl font-bold text-gray-950 dark:text-white">Topic mastery</h2>
             {profileQuery.isLoading ? (
-              <span className="text-xs font-medium text-gray-400">Loading your mastery model...</span>
+              <span className="text-xs font-medium text-gray-400 dark:text-gray-500">Loading your mastery model...</span>
             ) : null}
           </div>
           <div className="mt-5 space-y-4">
@@ -192,10 +192,10 @@ export function ResultsPage() {
               return (
                 <div key={topic}>
                   <div className="mb-2 flex items-center justify-between gap-4">
-                    <p className="text-sm font-medium text-gray-800">{topic}</p>
-                    <span className="text-sm font-semibold text-gray-500">{percent}%</span>
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{topic}</p>
+                    <span className="text-sm font-semibold text-gray-500 dark:text-gray-400">{percent}%</span>
                   </div>
-                  <div className="h-3 overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-3 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                     <div className={`h-full rounded-full ${barClass}`} style={{ width: `${percent}%` }} />
                   </div>
                 </div>
@@ -282,7 +282,7 @@ export function ResultsPage() {
                 mode: "teaching",
               });
             }}
-            className="rounded-2xl border border-gray-200 bg-white px-6 py-4 text-sm font-semibold text-gray-700 transition hover:border-purple-200 hover:text-purple-700"
+            className="rounded-2xl border border-gray-200 bg-white px-6 py-4 text-sm font-semibold text-gray-700 transition hover:border-purple-200 hover:text-purple-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-purple-700 dark:hover:text-purple-300"
           >
             {nextChapter && !isCustom
               ? "Next chapter"
@@ -292,9 +292,9 @@ export function ResultsPage() {
           </button>
 
           {persistResults.error ? (
-            <p className="text-sm text-red-600">{persistResults.error.message}</p>
+            <p className="text-sm text-red-600 dark:text-red-400">{persistResults.error.message}</p>
           ) : (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               {persistResults.isPending
                 ? "Saving results to student profile..."
                 : "Results synced to student profile."}

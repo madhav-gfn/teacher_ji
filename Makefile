@@ -1,4 +1,4 @@
-.PHONY: setup ingest dev prod down test logs
+.PHONY: setup ingest dev prod down test test-e2e logs
 
 setup:
 	cp .env.example .env
@@ -22,6 +22,9 @@ down:
 	docker-compose down
 
 test:
+	cd backend && pytest
+
+test-e2e:
 	python scripts/test_e2e.py
 
 logs:

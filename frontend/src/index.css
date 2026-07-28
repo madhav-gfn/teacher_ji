@@ -8,11 +8,20 @@
   font-family: "Inter", sans-serif;
 }
 
+:root.dark {
+  color: #f3f4f6;
+  background: #030712;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
   background-color: #f8fafc;
+}
+
+.dark body {
+  background-color: #030712;
 }
 
 * {
