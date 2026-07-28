@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
+from contextvars import ContextVar
+from types import SimpleNamespace
+from typing import Callable
 
-from groq import APIStatusError, Groq, RateLimitError
+from groq import APIError, Groq
 from langsmith import traceable
 
 from .prompt_registry import render_versioned
@@ -16,6 +20,100 @@ client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 TEACHING_MODEL = "llama-3.3-70b-versatile"
 MAX_TOOL_ITERATIONS = 4
 
+# Phase 3B: SSE streaming for the teaching-generation step only (Supervisor/
+# Reflection/quiz/feedback stay non-streamed, per master_plan.md's Phase 3
+# scope). A ContextVar rather than a state field or function argument because
+# it needs to reach a Groq call several stack frames down without threading a
+# callback through every function signature in between - and because
+# api/routes/session.py sets it around a `run_session()` call that executes
+# in a worker thread via `asyncio.to_thread`, which explicitly copies the
+# calling context (including ContextVars) into that thread, so this "just
+# works" across the sync/async boundary with no explicit hand-off code.
+# Default None means "no one is listening" - every existing call path is
+# completely unaffected unless a route opts in.
+stream_sink: ContextVar[Callable[[str], None] | None] = ContextVar("stream_sink", default=None)
+
+# Phase 3B follow-up fix: llama-3.3-70b-versatile occasionally emits a tool
+# call as literal text content instead of a real `tool_calls` delta (the same
+# malformed-generation quirk _run_subject_agent's corrective-retry already
+# handles - see the comment there, e.g. `<function=search_ncert {...}>` seen
+# live). Non-streaming callers never notice, since that raw text just fails
+# json.loads and gets silently retried - but a live token stream would
+# otherwise show the user that internal-looking fragment as it's typed out.
+# Buffered long enough to classify (a real answer starts with `{`), then
+# either forwarded normally or suppressed for the rest of that message.
+_TOOL_NAMES = "|".join(re.escape(spec["function"]["name"]) for spec in TOOL_SPECS)
+# Matches both a bare malformed call (search_ncert(...)) and one wrapped in
+# the <function=...> token seen live - the "function=" wrapper is optional.
+_MALFORMED_TOOL_CALL_PREFIX = re.compile(rf"^\s*(?:<?/?function\s*=?\s*)?({_TOOL_NAMES})\s*[\(\{{]")
+_PREFIX_SNIFF_CHARS = 40
+
+
+def _stream_chat_completion(groq_client, **kwargs):
+    """Consume a Groq streaming response, forwarding content deltas to the
+    active stream_sink as they arrive, and return an object shaped like a
+    normal (non-streaming) ChatCompletion response - `.choices[0].message`
+    with `.content`/`.tool_calls` - so callers can't tell the difference."""
+    sink = stream_sink.get()
+    stream = groq_client.chat.completions.create(**kwargs, stream=True)
+
+    content_parts: list[str] = []
+    tool_call_parts: dict[int, dict[str, str | None]] = {}
+    pending_prefix = ""
+    classified = False
+    suppress = False
+
+    def _maybe_forward(text: str) -> None:
+        nonlocal pending_prefix, classified, suppress
+        if sink is None or suppress:
+            return
+        if classified:
+            sink(text)
+            return
+        pending_prefix += text
+        if len(pending_prefix) < _PREFIX_SNIFF_CHARS:
+            return
+        classified = True
+        if _MALFORMED_TOOL_CALL_PREFIX.match(pending_prefix):
+            suppress = True
+            return
+        sink(pending_prefix)
+
+    for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta.content:
+            content_parts.append(delta.content)
+            _maybe_forward(delta.content)
+        for tool_call_delta in delta.tool_calls or []:
+            entry = tool_call_parts.setdefault(
+                tool_call_delta.index, {"id": None, "name": "", "arguments": ""}
+            )
+            if tool_call_delta.id:
+                entry["id"] = tool_call_delta.id
+            if tool_call_delta.function:
+                if tool_call_delta.function.name:
+                    entry["name"] = (entry["name"] or "") + tool_call_delta.function.name
+                if tool_call_delta.function.arguments:
+                    entry["arguments"] = (entry["arguments"] or "") + tool_call_delta.function.arguments
+
+    if sink is not None and not suppress and not classified and pending_prefix:
+        # Stream ended before we hit the sniff threshold (a short answer) -
+        # flush whatever was buffered rather than dropping it silently.
+        sink(pending_prefix)
+
+    reconstructed_tool_calls = [
+        SimpleNamespace(
+            id=entry["id"],
+            function=SimpleNamespace(name=entry["name"], arguments=entry["arguments"]),
+        )
+        for _, entry in sorted(tool_call_parts.items())
+    ]
+    message = SimpleNamespace(
+        content="".join(content_parts) or None,
+        tool_calls=reconstructed_tool_calls or None,
+    )
+    return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
 
 def call_groq_with_retry(
     client,
@@ -25,6 +123,7 @@ def call_groq_with_retry(
     max_attempts=3,
     prompt_name: str | None = None,
     prompt_version: int | None = None,
+    allow_streaming: bool = False,
 ):
     json_instruction = (
         "Return ONLY one syntactically valid JSON object. "
@@ -53,12 +152,20 @@ def call_groq_with_retry(
         },
     )
     def _completion(*, messages):
-        return client.chat.completions.create(
+        kwargs = dict(
             model=model,
             messages=messages,
             temperature=0.1,
             response_format={"type": "json_object"},
         )
+        # allow_streaming is an explicit per-call opt-in (only document_tutor's
+        # teaching call passes it), not a blanket "stream whenever a sink is
+        # active" - otherwise Supervisor/Reflection/quiz/feedback calls made
+        # during the same graph run would leak raw decision JSON into the
+        # same visible stream, which master_plan.md explicitly rules out.
+        if allow_streaming and stream_sink.get() is not None:
+            return _stream_chat_completion(client, **kwargs)
+        return client.chat.completions.create(**kwargs)
 
     for attempt in range(1, max_attempts + 1):
         raw = ""
@@ -66,7 +173,7 @@ def call_groq_with_retry(
             response = _completion(messages=messages)
             raw = response.choices[0].message.content
             return json.loads(raw)
-        except (RateLimitError, APIStatusError) as e:
+        except APIError as e:
             print(f"Retry {attempt}/{max_attempts}: API error - {e}")
             if attempt < max_attempts:
                 messages.append(
@@ -220,8 +327,15 @@ def _create_completion(max_attempts: int = 3, **kwargs):
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
+            # Every call site through here is a math/science/sst subject
+            # agent's teaching-generation loop (see _run_subject_agent) - the
+            # one path master_plan.md wants streamed - so, unlike
+            # call_groq_with_retry, no separate opt-in flag is needed: it's
+            # always safe to stream when a sink is active.
+            if stream_sink.get() is not None:
+                return _stream_chat_completion(client, **kwargs)
             return client.chat.completions.create(**kwargs)
-        except (RateLimitError, APIStatusError) as exc:
+        except APIError as exc:
             last_exc = exc
             print(f"Retry {attempt}/{max_attempts}: API error - {exc}")
             if attempt < max_attempts:
@@ -374,7 +488,7 @@ def _run_subject_agent(state: LearningState, prompt_name: str, agent_name: str) 
                 temperature=0.1,
                 langsmith_extra={"metadata": {"prompt_name": prompt_name, "prompt_version": prompt_version}},
             )
-        except (RateLimitError, APIStatusError) as exc:
+        except APIError as exc:
             if not tool_call_recovery_attempted:
                 tool_call_recovery_attempted = True
                 print(f"Tool call malformed ({exc}); nudging the model to retry it properly.")

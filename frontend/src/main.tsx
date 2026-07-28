@@ -7,6 +7,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { setAuthTokenGetter } from "./api/authToken";
 import { useSessionStore } from "./store/sessionStore";
 import "./index.css";
+import "katex/dist/katex.min.css";
 
 const queryClient = new QueryClient();
 

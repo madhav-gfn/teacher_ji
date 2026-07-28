@@ -1,4 +1,5 @@
 import { GuidingQuestion } from "./GuidingQuestion";
+import { Markdown } from "./Markdown";
 import type { Subject, TeachingOutput } from "../api/client";
 import { subjectMeta } from "../data/curriculum";
 
@@ -97,11 +98,11 @@ export function TeachingCard({
               </span>
               <div className="min-w-0 flex-1">
                 {subject === "math" ? (
-                  <pre className="whitespace-pre-wrap rounded-xl border border-purple-100 bg-white px-4 py-3 font-mono text-sm leading-7 text-gray-800">
+                  <Markdown className="rounded-xl border border-purple-100 bg-white px-4 py-3 text-sm text-gray-800">
                     {step}
-                  </pre>
+                  </Markdown>
                 ) : (
-                  <p className="text-base leading-7 text-gray-800">{step}</p>
+                  <Markdown className="text-base text-gray-800">{step}</Markdown>
                 )}
               </div>
             </div>
@@ -114,7 +115,7 @@ export function TeachingCard({
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-yellow-800">
             {subject === "custom" ? "From Your Document" : "From Your NCERT Book"}
           </p>
-          <p className="mt-3 text-base leading-7 text-yellow-950">{exampleContent}</p>
+          <Markdown className="mt-3 text-base text-yellow-950">{exampleContent}</Markdown>
         </section>
       ) : null}
 
@@ -127,7 +128,7 @@ export function TeachingCard({
             {keyPoints.map((point) => (
               <li key={point} className="flex gap-3 text-base leading-7 text-gray-800">
                 <span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-purple-600" />
-                <span>{point}</span>
+                <Markdown className="min-w-0 flex-1">{point}</Markdown>
               </li>
             ))}
           </ul>
@@ -140,15 +141,15 @@ export function TeachingCard({
         </p>
         <div className="mt-3 space-y-3">
           {teachingOutput.analogy ? (
-            <p className="text-base leading-7 text-teal-950">{teachingOutput.analogy}</p>
+            <Markdown className="text-base text-teal-950">{teachingOutput.analogy}</Markdown>
           ) : null}
           {teachingOutput.mnemonic ? (
-            <p className="text-base leading-7 text-teal-950">{teachingOutput.mnemonic}</p>
+            <Markdown className="text-base text-teal-950">{teachingOutput.mnemonic}</Markdown>
           ) : null}
           {subject === "sst" && teachingOutput.connection_to_present ? (
-            <p className="rounded-xl border border-teal-200 bg-white px-4 py-3 text-sm leading-6 text-gray-700">
+            <Markdown className="rounded-xl border border-teal-200 bg-white px-4 py-3 text-sm text-gray-700">
               {teachingOutput.connection_to_present}
-            </p>
+            </Markdown>
           ) : null}
           {subject === "sst" && teachingOutput.timeline?.length ? (
             <div className="flex gap-3 overflow-x-auto pb-2">
@@ -174,7 +175,7 @@ export function TeachingCard({
               Common Mistake To Avoid
             </p>
           </div>
-          <p className="mt-3 text-base leading-7 text-red-950">{teachingOutput.common_mistake}</p>
+          <Markdown className="mt-3 text-base text-red-950">{teachingOutput.common_mistake}</Markdown>
         </section>
       ) : null}
 
@@ -182,9 +183,9 @@ export function TeachingCard({
         <section className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500">Diagram</p>
           <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-4">
-            <p className="text-sm italic leading-7 text-gray-600">
-              Visualize this: {teachingOutput.diagram_description}
-            </p>
+            <Markdown className="text-sm italic text-gray-600">
+              {`Visualize this: ${teachingOutput.diagram_description}`}
+            </Markdown>
           </div>
           <p className="mt-3 text-sm font-medium text-teal-700">Draw in notebook</p>
         </section>

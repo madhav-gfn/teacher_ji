@@ -1,8 +1,13 @@
 import { useEffect, useMemo } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiClient } from "../api/client";
 import { curriculum, getNextChapter, getTopics, subjectMeta } from "../data/curriculum";
 import { useSessionStore } from "../store/sessionStore";
+
+// Fallback shown only while the real profile is loading or for a topic the
+// Memory model has no score for yet (e.g. this is the student's first ever
+// session) - never shown once a real mastery value exists.
+const DEFAULT_MASTERY_PERCENT = 50;
 
 function scoreClasses(scorePercent: number) {
   if (scorePercent >= 80) {
@@ -71,6 +76,32 @@ export function ResultsPage() {
 
     void persistResults.mutateAsync();
   }, [persistResults]);
+
+  // Phase 3: the "Topic mastery" section below used to show a fake formula
+  // (weak → 42%, mastered → 90%, else → 65%) instead of real data. Fetch the
+  // Phase 1B Memory model directly - refetches once persistResults settles so
+  // this session's rollup is reflected, not just what was true before it ran.
+  const profileQuery = useQuery({
+    queryKey: ["student-profile", studentId],
+    queryFn: () => apiClient.getStudentProfile(studentId),
+    enabled: Boolean(studentId),
+  });
+
+  useEffect(() => {
+    if (persistResults.isSuccess) {
+      void profileQuery.refetch();
+    }
+    // profileQuery is stable across renders from useQuery's perspective for our purposes here
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persistResults.isSuccess]);
+
+  const masteryFor = (topic: string): number => {
+    const score = profileQuery.data?.mastery[topic.trim().toLowerCase()];
+    if (typeof score === "number") {
+      return Math.round(score * 100);
+    }
+    return DEFAULT_MASTERY_PERCENT;
+  };
 
   if (!grade || !subject || !chapter || !sessionId) {
     return (
@@ -147,11 +178,16 @@ export function ResultsPage() {
         </section>
 
         <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold text-gray-950">Topic mastery</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-xl font-bold text-gray-950">Topic mastery</h2>
+            {profileQuery.isLoading ? (
+              <span className="text-xs font-medium text-gray-400">Loading your mastery model...</span>
+            ) : null}
+          </div>
           <div className="mt-5 space-y-4">
             {allTopics.map((topic) => {
-              const percent = weakTopics.includes(topic) ? 42 : masteredTopics.includes(topic) ? 90 : 65;
-              const barClass = weakTopics.includes(topic) ? "bg-red-500" : "bg-green-500";
+              const percent = masteryFor(topic);
+              const barClass = percent < 50 ? "bg-red-500" : percent < 75 ? "bg-amber-500" : "bg-green-500";
 
               return (
                 <div key={topic}>

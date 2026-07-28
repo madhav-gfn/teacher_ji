@@ -94,6 +94,7 @@ def document_tutor(state: LearningState) -> LearningState:
         _build_user_message(state),
         prompt_name="generic_tutor",
         prompt_version=prompt_version,
+        allow_streaming=True,
     )
 
     messages = list(state.get("messages", []))

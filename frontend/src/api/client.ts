@@ -145,11 +145,16 @@ export interface QuizHistoryEntry {
   score: number;
 }
 
+// Mirrors backend/api/models.py:StudentProfile exactly - the Phase 1B Memory
+// model (per-concept mastery/confidence), not a session log.
 export interface StudentProfile {
   student_id: string;
   grade: number;
-  topics_mastered: Record<string, string[]>;
-  weak_topics: Record<string, string[]>;
+  learning_style: string;
+  mastery: Record<string, number>;
+  confidence: Record<string, number>;
+  weak_topics: string[];
+  revision_due: string[];
   quiz_history: QuizHistoryEntry[];
   total_sessions: number;
 }
@@ -192,6 +197,77 @@ async function request<TResponse>(
   return parseResponse<TResponse>(response);
 }
 
+// Phase 3B: SSE streaming. Deliberately not EventSource - it can't send a POST
+// body or an Authorization header, both of which every endpoint here needs.
+// A manual fetch + ReadableStream reader parsing the `event:`/`data:` frame
+// format is the standard workaround for authenticated/POST SSE in browsers.
+export type StreamEvent<TDone> =
+  | { event: "token"; data: string }
+  | { event: "done"; data: TDone }
+  | { event: "error"; data: { detail: string } };
+
+async function* streamRequest<TDone>(
+  path: string,
+  body: unknown,
+): AsyncGenerator<StreamEvent<TDone>> {
+  const token = await getAuthToken();
+
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => "");
+    let detail = text || `Request failed with status ${response.status}`;
+    try {
+      const parsed = text ? JSON.parse(text) : null;
+      if (parsed && typeof parsed.detail === "string") {
+        detail = parsed.detail;
+      }
+    } catch {
+      // not JSON - use the raw text as-is
+    }
+    throw new Error(detail);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+
+      let eventName = "message";
+      let dataLine = "";
+      for (const line of rawEvent.split("\n")) {
+        if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          dataLine += line.slice(5).trim();
+        }
+      }
+
+      if (dataLine) {
+        yield { event: eventName, data: JSON.parse(dataLine) } as StreamEvent<TDone>;
+      }
+
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
+}
+
 export const apiClient = {
   startSession(body: StartSessionRequest) {
     return request<TeachingResponse>("/session/start", {
@@ -217,6 +293,18 @@ export const apiClient = {
       body: JSON.stringify(body),
     });
   },
+  streamStartSession(body: StartSessionRequest) {
+    return streamRequest<TeachingResponse>("/session/start/stream", body);
+  },
+  streamNextTopic(body: NextTopicRequest) {
+    return streamRequest<TeachingResponse | ChapterCompleteResponse>("/session/next-topic/stream", body);
+  },
+  streamSessionQuestion(body: SessionQuestionRequest) {
+    return streamRequest<TeachingResponse>("/session/question/stream", body);
+  },
+  streamExplainDifferently(body: ExplainDifferentlyRequest) {
+    return streamRequest<TeachingResponse>("/session/explain-differently/stream", body);
+  },
   startQuiz(body: StartQuizRequest) {
     return request<QuizResponse>("/quiz/start", {
       method: "POST",
@@ -234,6 +322,9 @@ export const apiClient = {
       method: "POST",
       body: JSON.stringify(body),
     });
+  },
+  getStudentProfile(studentId: string) {
+    return request<StudentProfile>(`/student/${studentId}`);
   },
   async uploadDocument(file: File, title?: string) {
     const form = new FormData();

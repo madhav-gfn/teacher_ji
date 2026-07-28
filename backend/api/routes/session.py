@@ -4,6 +4,9 @@ Session routes — teaching phase of the learning loop.
 Endpoints:
     POST /session/start        → starts a new learning session, runs first topic
     POST /session/next-topic   → advances to the next topic or signals quiz-ready
+    POST /session/*/stream     → SSE twins of the above (Phase 3B) that stream the
+                                  teaching agent's tokens live instead of waiting
+                                  for the full turn to settle
 
 Teaching logic lives here alongside session management to avoid a nearly-empty
 teaching.py module. There is no route conflict: all paths are /session/*.
@@ -13,13 +16,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import queue
+import threading
 import uuid
-from typing import Any
+from typing import Any, AsyncGenerator, Callable
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from agents.graph import run_session
 from agents.state import LearningState
+from agents.subject_agents import stream_sink
 from api.auth import get_current_student_id, require_owner
 from api.curriculum import get_chapter_topics
 from api.db import apply_reexplanation_signal, get_document, get_student_memory, load_session, save_session
@@ -40,6 +47,8 @@ _JSON_RETRY_MESSAGE = (
     "Return ONLY the JSON object, nothing else."
 )
 
+_STREAM_ERROR_DETAIL = "Agent failed to generate valid response. Please try again."
+
 
 # ---------------------------------------------------------------------------
 # Graph invocation helpers
@@ -53,33 +62,87 @@ def _append_retry_message(state: LearningState) -> LearningState:
     return {**state, "messages": messages}
 
 
-async def _invoke_graph(state: LearningState) -> dict[str, Any]:
-    """
-    Run the Supervisor-led LangGraph (agents/graph.py) in a thread pool for one turn.
-
-    The Supervisor decides the next action and the graph dispatches to the
-    matching agent node, returning the full merged LearningState. Retries once
-    if the run raises a JSON-related error.
-    """
+def _run_session_sync(state: LearningState) -> dict[str, Any]:
+    """Run the Supervisor-led LangGraph (agents/graph.py) for one turn,
+    retrying once if the run raises a JSON-related error. Synchronous - this
+    is the actual worker-thread body for both the plain (asyncio.to_thread)
+    and SSE-streaming (threading.Thread, see _sse_teaching_stream) invocation
+    paths, so the retry semantics are identical either way."""
     try:
-        return await asyncio.to_thread(run_session, state)
+        return run_session(state)
     except (json.JSONDecodeError, KeyError, ValueError) as first_err:
         logger.warning("Graph run first attempt failed: %s", first_err)
-        retry_state = _append_retry_message(state)
-        try:
-            return await asyncio.to_thread(run_session, retry_state)
-        except Exception as second_err:
-            logger.error("Graph run failed after retry: %s", second_err)
-            raise HTTPException(
-                status_code=500,
-                detail="Agent failed to generate valid response. Please try again.",
-            )
+        return run_session(_append_retry_message(state))
+
+
+async def _invoke_graph(state: LearningState) -> dict[str, Any]:
+    """Run _run_session_sync in a thread pool, translating any failure
+    (including a failed retry) into the same 500 the API has always returned."""
+    try:
+        return await asyncio.to_thread(_run_session_sync, state)
     except Exception as err:
-        logger.error("Graph run unexpected error: %s", err)
-        raise HTTPException(
-            status_code=500,
-            detail="Agent failed to generate valid response. Please try again.",
-        )
+        logger.error("Graph run failed: %s", err)
+        raise HTTPException(status_code=500, detail=_STREAM_ERROR_DETAIL)
+
+
+async def _sse_teaching_stream(
+    session_id: str,
+    state: LearningState,
+    response_builder: Callable[[dict[str, Any]], Any],
+) -> AsyncGenerator[bytes, None]:
+    """Phase 3B: run _run_session_sync in a background thread with the
+    stream_sink (agents/subject_agents.py) pointed at a thread-safe queue, so
+    the teaching agent's tokens can be forwarded to the client as they're
+    generated instead of only after the whole turn settles.
+
+    `asyncio.to_thread` (used below to drain the queue without blocking the
+    event loop) also happens to be exactly what runs the graph itself in the
+    non-streaming path - reused here for the worker thread instead, since a
+    plain threading.Thread is what actually needs to run concurrently with
+    this generator's queue-draining loop.
+
+    Emits `token` events as text arrives, then one final `done` event with the
+    same JSON shape the non-streaming endpoint would return (built by
+    response_builder from the final state) - or one `error` event if the
+    graph run failed. Session persistence happens here, after the run
+    completes, exactly where the non-streaming routes do it.
+    """
+    q: "queue.Queue[Any]" = queue.Queue()
+    _DONE = object()
+    outcome: dict[str, Any] = {}
+
+    def on_delta(text: str) -> None:
+        q.put(text)
+
+    def worker() -> None:
+        token = stream_sink.set(on_delta)
+        try:
+            outcome["state"] = _run_session_sync(state)
+        except Exception as exc:  # noqa: BLE001 - reported via the `error` SSE event
+            outcome["error"] = exc
+        finally:
+            stream_sink.reset(token)
+            q.put(_DONE)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    while True:
+        item = await asyncio.to_thread(q.get)
+        if item is _DONE:
+            break
+        yield f"event: token\ndata: {json.dumps(item)}\n\n".encode("utf-8")
+
+    if "error" in outcome:
+        logger.error("Streaming graph run failed: %s", outcome["error"])
+        yield (
+            f"event: error\ndata: {json.dumps({'detail': _STREAM_ERROR_DETAIL})}\n\n"
+        ).encode("utf-8")
+        return
+
+    final_state = outcome["state"]
+    await save_session(session_id, final_state)
+    payload = response_builder(final_state)
+    yield f"event: done\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
 
 
 def _response_subject(state: dict[str, Any]) -> str:
@@ -187,31 +250,67 @@ async def _reteach_current_topic(
     )
 
 
+def _teaching_response_payload(
+    session_id: str, requested_topic: str, chapter: str, state: dict[str, Any]
+) -> dict[str, Any]:
+    """The exact TeachingResponse shape, as a plain dict - shared by every
+    streaming route's `done` event so it matches its non-streaming twin."""
+    return TeachingResponse(
+        session_id=session_id,
+        subject=_response_subject(state),
+        chapter=chapter,
+        topic=_actually_taught_topic(state, requested_topic),
+        teaching_output=state.get("teaching_output", {}),
+        retrieved_chunks=state.get("retrieved_context", []),
+        next_topics=_remaining_topics_from_state(
+            state,
+            _covered_topics_for_state(state, requested_topic, list(state.get("topics_covered", []))),
+        ),
+    ).model_dump()
+
+
+def _reteach_current_topic_stream(
+    session_id: str,
+    state: dict[str, Any],
+    *,
+    user_message: str,
+    is_reexplanation_request: bool = False,
+) -> StreamingResponse:
+    async def generator() -> AsyncGenerator[bytes, None]:
+        reteach_state = _append_user_message(state, user_message)
+        reteach_state["mode"] = "teaching"
+        reteach_state["teaching_output"] = {}
+
+        if is_reexplanation_request:
+            updated_memory = await apply_reexplanation_signal(
+                reteach_state["student_id"],
+                reteach_state["grade"],
+                reteach_state["topic"],
+            )
+            reteach_state["student_memory"] = updated_memory
+
+        requested_topic = reteach_state["topic"]
+        chapter = reteach_state["chapter"]
+        async for chunk in _sse_teaching_stream(
+            session_id,
+            reteach_state,
+            lambda final_state: _teaching_response_payload(session_id, requested_topic, chapter, final_state),
+        ):
+            yield chunk
+
+    return StreamingResponse(generator(), media_type="text/event-stream")
+
+
 # ---------------------------------------------------------------------------
 # POST /session/start
 # ---------------------------------------------------------------------------
 
 
-@router.post("/start", response_model=TeachingResponse)
-async def start_session(
-    body: StartSessionRequest,
-    current_student_id: str = Depends(get_current_student_id),
-) -> TeachingResponse:
-    """
-    Create a new learning session.
-
-    Two mutually exclusive session sources (enforced by StartSessionRequest):
-    - NCERT: subject + grade + chapter → topic list from NCERT_CURRICULUM,
-      taught by the matching subject agent.
-    - Uploaded material: document_id → topic list generated at upload time
-      (agents/document_agent.py:extract_topics), taught by document_tutor.
-
-    1. Generates a UUID session_id.
-    2. Resolves the topic list and teaching agent for the chosen source.
-    3. Builds the initial LearningState and runs the agent for topic #1.
-    4. Stores state in Redis (TTL 4 h).
-    5. Returns TeachingResponse with the agent output and remaining topics.
-    """
+async def _build_start_state(
+    body: StartSessionRequest, current_student_id: str
+) -> tuple[str, str, str, LearningState]:
+    """Shared setup for /session/start and /session/start/stream. Returns
+    (session_id, response_subject, topic, initial_state)."""
     session_id = str(uuid.uuid4())
 
     if body.document_id:
@@ -273,6 +372,31 @@ async def start_session(
         "student_memory": student_memory,
     }
 
+    return session_id, response_subject, topic, initial_state
+
+
+@router.post("/start", response_model=TeachingResponse)
+async def start_session(
+    body: StartSessionRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> TeachingResponse:
+    """
+    Create a new learning session.
+
+    Two mutually exclusive session sources (enforced by StartSessionRequest):
+    - NCERT: subject + grade + chapter → topic list from NCERT_CURRICULUM,
+      taught by the matching subject agent.
+    - Uploaded material: document_id → topic list generated at upload time
+      (agents/document_agent.py:extract_topics), taught by document_tutor.
+
+    1. Generates a UUID session_id.
+    2. Resolves the topic list and teaching agent for the chosen source.
+    3. Builds the initial LearningState and runs the agent for topic #1.
+    4. Stores state in Redis (TTL 4 h).
+    5. Returns TeachingResponse with the agent output and remaining topics.
+    """
+    session_id, response_subject, topic, initial_state = await _build_start_state(body, current_student_id)
+
     state = await _invoke_graph(initial_state)
 
     await save_session(session_id, state)
@@ -282,11 +406,30 @@ async def start_session(
     return TeachingResponse(
         session_id=session_id,
         subject=response_subject,
-        chapter=chapter,
+        chapter=initial_state["chapter"],
         topic=_actually_taught_topic(state, topic),
         teaching_output=state.get("teaching_output", {}),
         retrieved_chunks=state.get("retrieved_context", []),
         next_topics=remaining,
+    )
+
+
+@router.post("/start/stream")
+async def start_session_stream(
+    body: StartSessionRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> StreamingResponse:
+    """SSE twin of /session/start (Phase 3B) - see _sse_teaching_stream."""
+    session_id, _response_subject, topic, initial_state = await _build_start_state(body, current_student_id)
+    chapter = initial_state["chapter"]
+
+    return StreamingResponse(
+        _sse_teaching_stream(
+            session_id,
+            initial_state,
+            lambda final_state: _teaching_response_payload(session_id, topic, chapter, final_state),
+        ),
+        media_type="text/event-stream",
     )
 
 
@@ -367,6 +510,68 @@ async def next_topic(
     )
 
 
+@router.post("/next-topic/stream")
+async def next_topic_stream(
+    body: NextTopicRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> StreamingResponse:
+    """SSE twin of /session/next-topic (Phase 3B). The chapter-complete branch
+    never invokes the teaching agent, so there's nothing to stream there -
+    it emits a single `done` event immediately, same payload as the
+    non-streaming route."""
+    state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
+
+    topics_covered: list[str] = state.get("topics_covered", [])
+    if body.completed_topic not in topics_covered:
+        topics_covered.append(body.completed_topic)
+    state["topics_covered"] = topics_covered
+
+    subject: str = state["subject"]
+    grade: int = state["grade"]
+    chapter: str = state["chapter"]
+
+    remaining = _remaining_topics_from_state(state, topics_covered)
+
+    if not remaining:
+        state["mode"] = "quiz"
+        await save_session(body.session_id, state)
+
+        chapter_summary = {
+            "chapter": chapter,
+            "subject": subject,
+            "grade": grade,
+            "topics_covered": topics_covered,
+            "session_score": state.get("session_score", 0.0),
+            "weak_topics": state.get("weak_topics", []),
+        }
+        payload = ChapterCompleteResponse(
+            session_id=body.session_id,
+            chapter_summary=chapter_summary,
+            topics_covered=topics_covered,
+        ).model_dump()
+
+        async def _immediate_done() -> AsyncGenerator[bytes, None]:
+            yield f"event: done\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
+
+        return StreamingResponse(_immediate_done(), media_type="text/event-stream")
+
+    next_t = remaining[0]
+    state["topic"] = next_t
+    state["mode"] = "teaching"
+    state["teaching_output"] = {}
+    state["retrieved_context"] = []
+
+    return StreamingResponse(
+        _sse_teaching_stream(
+            body.session_id,
+            state,
+            lambda final_state: _teaching_response_payload(body.session_id, next_t, chapter, final_state),
+        ),
+        media_type="text/event-stream",
+    )
+
+
 @router.post("/question", response_model=TeachingResponse)
 async def ask_topic_question(
     body: SessionQuestionRequest,
@@ -384,6 +589,26 @@ async def ask_topic_question(
     )
 
 
+@router.post("/question/stream")
+async def ask_topic_question_stream(
+    body: SessionQuestionRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> StreamingResponse:
+    """SSE twin of /session/question (Phase 3B) - this is what the chat panel
+    calls: a follow-up question is just another turn through the same
+    Supervisor/Learning Agent loop, streamed instead of awaited whole."""
+    state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
+    return _reteach_current_topic_stream(
+        body.session_id,
+        state,
+        user_message=(
+            f"The student asks: {body.question}\n"
+            "Answer this directly while staying on the same topic and grade level."
+        ),
+    )
+
+
 @router.post("/explain-differently", response_model=TeachingResponse)
 async def explain_differently(
     body: ExplainDifferentlyRequest,
@@ -392,6 +617,25 @@ async def explain_differently(
     state = await load_session(body.session_id)
     require_owner(state["student_id"], current_student_id)
     return await _reteach_current_topic(
+        body.session_id,
+        state,
+        user_message=(
+            "Re-explain the same topic in a different way.\n"
+            f"Student guidance: {body.hint}"
+        ),
+        is_reexplanation_request=True,
+    )
+
+
+@router.post("/explain-differently/stream")
+async def explain_differently_stream(
+    body: ExplainDifferentlyRequest,
+    current_student_id: str = Depends(get_current_student_id),
+) -> StreamingResponse:
+    """SSE twin of /session/explain-differently (Phase 3B)."""
+    state = await load_session(body.session_id)
+    require_owner(state["student_id"], current_student_id)
+    return _reteach_current_topic_stream(
         body.session_id,
         state,
         user_message=(

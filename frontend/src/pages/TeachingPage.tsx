@@ -1,25 +1,18 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { apiClient } from "../api/client";
+import { apiClient, type ChapterCompleteResponse, type TeachingResponse } from "../api/client";
+import { ChatPanel } from "../components/ChatPanel";
 import { Sidebar } from "../components/Sidebar";
 import { TeachingCard } from "../components/TeachingCard";
 import { useSessionStore } from "../store/sessionStore";
 
 function isChapterCompleteResponse(
-  response: Awaited<ReturnType<typeof apiClient.nextTopic>>,
-): response is {
-  session_id: string;
-  ready_for_quiz: true;
-  chapter_summary: Record<string, unknown>;
-  topics_covered: string[];
-} {
+  response: TeachingResponse | ChapterCompleteResponse,
+): response is ChapterCompleteResponse {
   return "ready_for_quiz" in response;
 }
 
 export function TeachingPage() {
-  const [showQuestionInput, setShowQuestionInput] = useState(false);
-  const [questionText, setQuestionText] = useState("");
   const {
     sessionId,
     subject,
@@ -32,86 +25,87 @@ export function TeachingPage() {
     markTopicComplete,
   } = useSessionStore();
 
-  const nextTopic = useMutation({
-    mutationFn: async () => {
-      if (!sessionId || !currentTopic) {
-        throw new Error("Session is not ready.");
-      }
+  // Phase 3B: "Next topic" and "Explain differently" both regenerate the
+  // whole card, so - unlike the chat panel - there's no structured content to
+  // render incrementally. Tokens still stream live into streamPreview while
+  // the request is in flight (an honest "the agent is actually generating
+  // this now" signal), then the TeachingCard swaps in once `done` lands.
+  const [streamPreview, setStreamPreview] = useState("");
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [nextTopicError, setNextTopicError] = useState<string | null>(null);
+  const [explainError, setExplainError] = useState<string | null>(null);
 
-      return apiClient.nextTopic({
+  const advanceTopic = async () => {
+    if (!sessionId || !currentTopic) {
+      return;
+    }
+    setIsAdvancing(true);
+    setStreamPreview("");
+    setNextTopicError(null);
+    try {
+      for await (const event of apiClient.streamNextTopic({
         session_id: sessionId,
         completed_topic: currentTopic,
-      });
-    },
-    onSuccess: (response) => {
-      if (!currentTopic) {
-        return;
+      })) {
+        if (event.event === "token") {
+          setStreamPreview((prev) => prev + event.data);
+        } else if (event.event === "done") {
+          markTopicComplete(currentTopic);
+          if (isChapterCompleteResponse(event.data)) {
+            setSession({ mode: "quiz", currentTopic: null, teachingOutput: null, topicsRemaining: [] });
+          } else {
+            setSession({
+              currentTopic: event.data.topic,
+              topicsRemaining: event.data.next_topics,
+              teachingOutput: event.data.teaching_output,
+              feedbackOutput: null,
+            });
+          }
+        } else if (event.event === "error") {
+          setNextTopicError(event.data.detail);
+        }
       }
+    } catch (error) {
+      setNextTopicError(error instanceof Error ? error.message : "Something went wrong.");
+    } finally {
+      setIsAdvancing(false);
+      setStreamPreview("");
+    }
+  };
 
-      markTopicComplete(currentTopic);
-
-      if (isChapterCompleteResponse(response)) {
-        setSession({
-          mode: "quiz",
-          currentTopic: null,
-          teachingOutput: null,
-          topicsRemaining: [],
-        });
-        return;
-      }
-
-      setSession({
-        currentTopic: response.topic,
-        topicsRemaining: response.next_topics,
-        teachingOutput: response.teaching_output,
-        feedbackOutput: null,
-      });
-    },
-  });
-
-  const askQuestion = useMutation({
-    mutationFn: async (question: string) => {
-      if (!sessionId) {
-        throw new Error("Session is not ready.");
-      }
-
-      return apiClient.askSessionQuestion({
-        session_id: sessionId,
-        question,
-      });
-    },
-    onSuccess: (response) => {
-      setSession({
-        currentTopic: response.topic,
-        topicsRemaining: response.next_topics,
-        teachingOutput: response.teaching_output,
-        feedbackOutput: null,
-      });
-      setQuestionText("");
-      setShowQuestionInput(false);
-    },
-  });
-
-  const explainDifferently = useMutation({
-    mutationFn: async () => {
-      if (!sessionId || !currentTopic) {
-        throw new Error("Session is not ready.");
-      }
-
-      return apiClient.explainDifferently({
+  const requestExplainDifferently = async () => {
+    if (!sessionId || !currentTopic) {
+      return;
+    }
+    setIsRefreshing(true);
+    setStreamPreview("");
+    setExplainError(null);
+    try {
+      for await (const event of apiClient.streamExplainDifferently({
         session_id: sessionId,
         hint: `Use a different example and a different phrasing for the topic "${currentTopic}".`,
-      });
-    },
-    onSuccess: (response) => {
-      setSession({
-        currentTopic: response.topic,
-        topicsRemaining: response.next_topics,
-        teachingOutput: response.teaching_output,
-        feedbackOutput: null,
-      });
-    },
-  });
+      })) {
+        if (event.event === "token") {
+          setStreamPreview((prev) => prev + event.data);
+        } else if (event.event === "done") {
+          setSession({
+            currentTopic: event.data.topic,
+            topicsRemaining: event.data.next_topics,
+            teachingOutput: event.data.teaching_output,
+            feedbackOutput: null,
+          });
+        } else if (event.event === "error") {
+          setExplainError(event.data.detail);
+        }
+      }
+    } catch (error) {
+      setExplainError(error instanceof Error ? error.message : "Something went wrong.");
+    } finally {
+      setIsRefreshing(false);
+      setStreamPreview("");
+    }
+  };
 
   if (!sessionId || !subject || !chapter || !currentTopic || !teachingOutput) {
     return (
@@ -141,87 +135,46 @@ export function TeachingPage() {
       />
 
       <main className="min-w-0 flex-1 px-6 py-6 lg:px-8">
-        <div className="mx-auto max-w-5xl">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentTopic}
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -18 }}
-              transition={{ duration: 0.25 }}
-            >
-              <TeachingCard
-                subject={subject}
-                chapter={chapter}
-                topic={currentTopic}
-                teachingOutput={teachingOutput}
-                isAdvancing={nextTopic.isPending}
-                isRefreshing={explainDifferently.isPending}
-                onNext={() => nextTopic.mutate()}
-                onExplainDifferently={() => explainDifferently.mutate()}
-              />
-            </motion.div>
-          </AnimatePresence>
-
-          <div className="mt-5 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Ask a question about this</p>
-                  <p className="text-sm text-gray-500">
-                    Send a focused follow-up and re-teach the same topic with that context.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowQuestionInput((value) => !value)}
-                  className="rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 transition hover:border-purple-200 hover:text-purple-700"
-                >
-                  {showQuestionInput ? "Hide question box" : "Ask a question about this"}
-                </button>
+        <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0">
+            {isAdvancing || isRefreshing ? (
+              <div className="mb-4 rounded-2xl border border-purple-100 bg-purple-50 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-purple-700">
+                  {isAdvancing ? "Teaching the next topic..." : "Rebuilding the explanation..."}
+                </p>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-purple-950">
+                  {streamPreview || "Thinking..."}
+                </p>
               </div>
+            ) : null}
 
-              {showQuestionInput ? (
-                <div className="rounded-2xl border border-purple-100 bg-purple-50 p-4">
-                  <textarea
-                    value={questionText}
-                    onChange={(event) => setQuestionText(event.target.value)}
-                    placeholder="Ask a specific question about this topic..."
-                    className="min-h-28 w-full rounded-xl border border-purple-100 bg-white px-4 py-3 text-sm text-gray-700 outline-none transition focus:border-purple-300 focus:ring-2 focus:ring-purple-100"
-                  />
-                  <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setQuestionText("");
-                        setShowQuestionInput(false);
-                      }}
-                      className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!questionText.trim() || askQuestion.isPending}
-                      onClick={() => askQuestion.mutate(questionText.trim())}
-                      className="rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:bg-purple-300"
-                    >
-                      {askQuestion.isPending ? "Sending question..." : "Submit question"}
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentTopic}
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -18 }}
+                transition={{ duration: 0.25 }}
+              >
+                <TeachingCard
+                  subject={subject}
+                  chapter={chapter}
+                  topic={currentTopic}
+                  teachingOutput={teachingOutput}
+                  isAdvancing={isAdvancing}
+                  isRefreshing={isRefreshing}
+                  onNext={() => void advanceTopic()}
+                  onExplainDifferently={() => void requestExplainDifferently()}
+                />
+              </motion.div>
+            </AnimatePresence>
 
-            {nextTopic.error ? (
-              <p className="mt-4 text-sm text-red-600">{nextTopic.error.message}</p>
-            ) : null}
-            {askQuestion.error ? (
-              <p className="mt-4 text-sm text-red-600">{askQuestion.error.message}</p>
-            ) : null}
-            {explainDifferently.error ? (
-              <p className="mt-4 text-sm text-red-600">{explainDifferently.error.message}</p>
-            ) : null}
+            {nextTopicError ? <p className="mt-4 text-sm text-red-600">{nextTopicError}</p> : null}
+            {explainError ? <p className="mt-4 text-sm text-red-600">{explainError}</p> : null}
+          </div>
+
+          <div className="h-[calc(100vh-6rem)] lg:sticky lg:top-6">
+            <ChatPanel />
           </div>
         </div>
       </main>
