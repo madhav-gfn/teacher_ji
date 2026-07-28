@@ -1,4 +1,4 @@
-TeacherJi v2 — Autonomous Learning System
+Daskalos v2 — Autonomous Learning System
 Architecture Design Document (Final)
 
 Version: 2.0
@@ -21,7 +21,7 @@ Answer
 
 While these systems can answer questions, they do not reason about learning.
 
-TeacherJi v2 is designed around a fundamentally different philosophy.
+Daskalos v2 is designed around a fundamentally different philosophy.
 
 Rather than generating responses, the system continuously reasons about:
 
@@ -32,11 +32,11 @@ which teaching strategy should be used
 how to verify learning
 how to adapt future lessons
 
-TeacherJi therefore behaves less like a chatbot and more like an autonomous educational operating system.
+Daskalos therefore behaves less like a chatbot and more like an autonomous educational operating system.
 
 Design Philosophy
 
-The objective of TeacherJi is not to maximize response quality.
+The objective of Daskalos is not to maximize response quality.
 
 The objective is to maximize student learning.
 
@@ -61,7 +61,7 @@ Large language models are very good at generating text.
 
 Good tutors are good at making decisions.
 
-TeacherJi prioritizes decision making over response generation.
+Daskalos prioritizes decision making over response generation.
 
 Examples include:
 
@@ -81,7 +81,7 @@ Every lesson begins with reasoning rather than generation.
 
 Traditional educational systems follow predefined lesson flows.
 
-TeacherJi continuously replans.
+Daskalos continuously replans.
 
 Example:
 
@@ -113,7 +113,7 @@ Every interaction changes future execution.
 
 3. Long-Term Personalization
 
-Instead of remembering conversations, TeacherJi remembers learning.
+Instead of remembering conversations, Daskalos remembers learning.
 
 Each student develops an evolving learning profile.
 
@@ -324,7 +324,7 @@ Generates analogies appropriate for the student's preferred learning style.
 
 Internal Execution Cycle
 
-Unlike traditional RAG pipelines, TeacherJi executes an iterative reasoning loop.
+Unlike traditional RAG pipelines, Daskalos executes an iterative reasoning loop.
 
 Understand Goal
 
@@ -364,7 +364,7 @@ The response is therefore the final product of multiple reasoning stages rather 
 
 Student Knowledge Model
 
-TeacherJi continuously maintains a structured representation of each learner.
+Daskalos continuously maintains a structured representation of each learner.
 
 Example:
 
@@ -478,7 +478,7 @@ quality exceeds a predefined threshold, or
 the retry limit is reached.
 Why This Is Truly Agentic
 
-TeacherJi satisfies the defining properties of modern autonomous AI systems.
+Daskalos satisfies the defining properties of modern autonomous AI systems.
 
 Goal-Oriented
 
@@ -542,7 +542,7 @@ Because reasoning is separated from execution, the system can evolve by simply e
 
 Conclusion
 
-TeacherJi v2 is designed as an Autonomous Learning System, not a traditional chatbot or RAG application. The architecture deliberately separates decision-making from execution:
+Daskalos v2 is designed as an Autonomous Learning System, not a traditional chatbot or RAG application. The architecture deliberately separates decision-making from execution:
 
 The Supervisor decides what should happen next.
 The Learning Agent decides how to achieve the educational objective using tools.

@@ -62,7 +62,7 @@ def _trace_config(state: dict) -> dict:
     """LangSmith run config (Phase 4A) - tags/metadata so a session's turns
     can be filtered/grouped in the trace UI. A no-op when tracing is off."""
     return {
-        "run_name": f"teacher_ji:{state.get('mode', 'teaching')}",
+        "run_name": f"daskalos:{state.get('mode', 'teaching')}",
         "tags": [f"subject:{state.get('subject', 'unknown')}", f"mode:{state.get('mode', 'teaching')}"],
         "metadata": {
             "session_id": state.get("session_id", ""),

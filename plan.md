@@ -1,9 +1,9 @@
-# TeacherJi — Critical Evaluation & Phased Revamp Plan
+# Daskalos — Critical Evaluation & Phased Revamp Plan
 
 ## Part 1: Critical Evaluation
 
 ### What You've Built
-TeacherJi is a **RAG-powered multi-agent tutoring system** for NCERT curriculum (Grades 6-8). It uses:
+Daskalos is a **RAG-powered multi-agent tutoring system** for NCERT curriculum (Grades 6-8). It uses:
 - **LangGraph** for agent orchestration (teach → quiz → feedback loop)
 - **FAISS** vector store with HuggingFace embeddings for retrieval
 - **Groq (Llama 3.3 70B)** for LLM inference
@@ -223,7 +223,7 @@ It demonstrates you understand RAG and can wire agents together, but it doesn't 
 - Confetti animation on quiz completion (sounds silly, but shows UI attention)
 
 #### 5B: Landing Page
-- Add a public landing page explaining what TeacherJi is
+- Add a public landing page explaining what Daskalos is
 - Include: demo video/GIF, architecture diagram, feature highlights
 - "Try it free" button that leads to the app
 

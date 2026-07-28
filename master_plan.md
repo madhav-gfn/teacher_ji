@@ -1,4 +1,4 @@
-# TeacherJi — Master Phased Revamp Plan
+# Daskalos — Master Phased Revamp Plan
 
 > Synthesizes `plan.md` (evaluation + phase structure) and `archie.md` (target agentic architecture), locked to the decisions made on 2026-07-20:
 > - **Supervisor**: LLM-driven decision node (not rule-based), using a small/fast model for cost control.

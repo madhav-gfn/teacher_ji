@@ -1,6 +1,6 @@
 # Engineering Log
 
-Raw, chronological notes from building and debugging TeacherJi — kept as-is
+Raw, chronological notes from building and debugging Daskalos — kept as-is
 because the debugging trail is the interesting part. See [README.md](README.md)
 for the architecture overview and current state.
 

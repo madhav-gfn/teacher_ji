@@ -1,6 +1,6 @@
 export type Theme = "light" | "dark";
 
-const STORAGE_KEY = "teacherji-theme";
+const STORAGE_KEY = "daskalos-theme";
 
 export function getInitialTheme(): Theme {
   if (typeof window === "undefined") {

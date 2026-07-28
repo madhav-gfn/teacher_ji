@@ -47,7 +47,7 @@ export function LandingPage() {
     <div className="min-h-screen bg-stone-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
         <p className="text-sm font-semibold uppercase tracking-[0.28em] text-purple-700 dark:text-purple-300">
-          TeacherJi
+          Daskalos
         </p>
         <button
           type="button"

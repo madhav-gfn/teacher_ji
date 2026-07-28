@@ -1,4 +1,4 @@
-# Contributing to TeacherJi
+# Contributing to Daskalos
 
 This is currently a single-maintainer portfolio project, but it's built to
 be readable and extendable — this doc is for anyone (including future-me)
