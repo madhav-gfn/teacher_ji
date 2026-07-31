@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from contextvars import ContextVar
 from types import SimpleNamespace
 from typing import Callable
 
-from groq import APIError, Groq
+from groq import APIError
 from langsmith import traceable
 
+from .groq_pool import next_client
 from .prompt_registry import render_versioned
 from .state import LearningState
 from .tools import TOOL_SPECS, execute_tool_call
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 TEACHING_MODEL = "llama-3.3-70b-versatile"
 MAX_TOOL_ITERATIONS = 4
@@ -116,7 +114,6 @@ def _stream_chat_completion(groq_client, **kwargs):
 
 
 def call_groq_with_retry(
-    client,
     model,
     system_prompt,
     user_message,
@@ -151,7 +148,7 @@ def call_groq_with_retry(
             "prompt_version": prompt_version,
         },
     )
-    def _completion(*, messages):
+    def _completion(*, messages, client):
         kwargs = dict(
             model=model,
             messages=messages,
@@ -170,7 +167,11 @@ def call_groq_with_retry(
     for attempt in range(1, max_attempts + 1):
         raw = ""
         try:
-            response = _completion(messages=messages)
+            # A fresh client per attempt (agents/groq_pool.py round-robins
+            # across GROQ_API_KEYS) - so a rate-limited attempt's retry lands
+            # on a different key instead of immediately re-hitting the one
+            # that just 429'd.
+            response = _completion(messages=messages, client=next_client())
             raw = response.choices[0].message.content
             return json.loads(raw)
         except APIError as e:
@@ -326,6 +327,9 @@ def _retrieval_query(state: LearningState) -> str:
 def _create_completion(max_attempts: int = 3, **kwargs):
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
+        # A fresh client per attempt (agents/groq_pool.py round-robins across
+        # GROQ_API_KEYS) - see call_groq_with_retry's identical reasoning above.
+        client = next_client()
         try:
             # Every call site through here is a math/science/sst subject
             # agent's teaching-generation loop (see _run_subject_agent) - the

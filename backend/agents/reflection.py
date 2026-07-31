@@ -13,15 +13,10 @@ anyway so a turn can never loop forever.
 from __future__ import annotations
 
 import json
-import os
-
-from groq import Groq
 
 from .prompt_registry import render_versioned
 from .state import LearningState
 from .subject_agents import _format_context, _format_student_memory, call_groq_with_retry
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 REFLECTION_MODEL = "llama-3.1-8b-instant"
 
@@ -61,7 +56,6 @@ def reflection_agent(state: LearningState) -> LearningState:
 
     try:
         decision = call_groq_with_retry(
-            client,
             REFLECTION_MODEL,
             system_prompt,
             "Audit this teaching output now.",

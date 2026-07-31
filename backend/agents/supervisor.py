@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 import json
-import os
-
-from groq import Groq
 
 from api.prerequisites import get_prerequisites
 
 from .prompt_registry import render_versioned
 from .state import LearningState
 from .subject_agents import call_groq_with_retry
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 SUPERVISOR_MODEL = "llama-3.1-8b-instant"
 
@@ -175,7 +170,6 @@ def supervisor_node(state: LearningState) -> LearningState:
             "supervisor", state_summary=_state_summary(state, prerequisites)
         )
         decision = call_groq_with_retry(
-            client,
             SUPERVISOR_MODEL,
             system_prompt,
             "Decide the next action for this turn.",

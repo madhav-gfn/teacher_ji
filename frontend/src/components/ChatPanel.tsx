@@ -52,15 +52,12 @@ export function ChatPanel() {
     scrollToBottom();
 
     try {
+      // Token deltas are the agent's raw teaching_output JSON (the strict-JSON
+      // contract every subject agent returns), not prose - and a reflection
+      // retry would double them up mid-stream with no separator. Not shown
+      // directly; the "..." placeholder below covers the wait until `done`.
       for await (const event of apiClient.streamSessionQuestion({ session_id: sessionId, question })) {
-        if (event.event === "token") {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId ? { ...message, content: message.content + event.data } : message,
-            ),
-          );
-          scrollToBottom();
-        } else if (event.event === "done") {
+        if (event.event === "done") {
           const response = event.data;
           const answer = [response.teaching_output.headline, response.teaching_output.explanation]
             .filter(Boolean)

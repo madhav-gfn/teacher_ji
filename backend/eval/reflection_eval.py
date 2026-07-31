@@ -34,11 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agents.prompt_registry import render_versioned  # noqa: E402
 from agents.subject_agents import _format_context, call_groq_with_retry  # noqa: E402
 from rag.retriever import retrieve  # noqa: E402
-from groq import Groq  # noqa: E402
-import os  # noqa: E402
 
 REFLECTION_MODEL = "llama-3.1-8b-instant"
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 _SEEDS = [
     {
@@ -269,7 +266,6 @@ def run_eval() -> dict:
 
         try:
             decision = call_groq_with_retry(
-                client,
                 REFLECTION_MODEL,
                 system_prompt,
                 "Audit this teaching output now.",

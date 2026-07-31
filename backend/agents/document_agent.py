@@ -13,9 +13,6 @@ drives the same topic-by-topic teaching flow used for NCERT chapters.
 """
 from __future__ import annotations
 
-import os
-
-from groq import Groq
 from rag.retriever import retrieve_document
 
 from .prompt_registry import render_versioned
@@ -27,8 +24,6 @@ from .subject_agents import (
     _retrieval_query,
     call_groq_with_retry,
 )
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 TOPIC_SAMPLE_CHUNKS = 12
 TOPIC_SAMPLE_CHARS = 6000
@@ -88,7 +83,6 @@ def document_tutor(state: LearningState) -> LearningState:
         student_memory=_format_student_memory(state, state.get("topic", "")),
     )
     teaching_output = call_groq_with_retry(
-        client,
         "llama-3.3-70b-versatile",
         system_prompt,
         _build_user_message(state),
@@ -124,7 +118,6 @@ def extract_topics(chunks: list[dict], filename: str) -> tuple[str, list[str]]:
 
     system_prompt, prompt_version = render_versioned("topic_extraction", filename=filename, sample=sample)
     payload = call_groq_with_retry(
-        client,
         "llama-3.3-70b-versatile",
         system_prompt,
         "Generate the title and topic list now.",

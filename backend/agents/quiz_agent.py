@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-import os
-
-from groq import Groq
 from rag.retriever import retrieve, retrieve_document
 
 from .prompt_registry import render_versioned
 from .state import LearningState
 from .subject_agents import call_groq_with_retry
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 MIN_CHUNK_WORDS = 20
 
@@ -124,7 +119,6 @@ def quiz_generator(state: LearningState) -> LearningState:
         f"Generate a quiz for chapter '{state.get('chapter', '')}' and topic '{state.get('topic', '')}'."
     )
     quiz_payload = call_groq_with_retry(
-        client,
         "llama-3.3-70b-versatile",
         system_prompt,
         user_request,
@@ -168,7 +162,6 @@ def feedback_agent(state: LearningState) -> LearningState:
         subject=state["subject"],
     )
     feedback_output = call_groq_with_retry(
-        client,
         "llama-3.3-70b-versatile",
         system_prompt,
         "Evaluate this answer.",

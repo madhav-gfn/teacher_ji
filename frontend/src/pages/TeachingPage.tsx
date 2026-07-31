@@ -26,11 +26,11 @@ export function TeachingPage() {
   } = useSessionStore();
 
   // Phase 3B: "Next topic" and "Explain differently" both regenerate the
-  // whole card, so - unlike the chat panel - there's no structured content to
-  // render incrementally. Tokens still stream live into streamPreview while
-  // the request is in flight (an honest "the agent is actually generating
-  // this now" signal), then the TeachingCard swaps in once `done` lands.
-  const [streamPreview, setStreamPreview] = useState("");
+  // whole card. The agent's streamed tokens are the raw teaching_output JSON
+  // (the strict-JSON contract every subject agent returns), not prose, so
+  // they're never shown directly - a reflection retry would also double them
+  // up mid-stream with no separator. Just show a loading state until `done`
+  // swaps the real TeachingCard in.
   const [isAdvancing, setIsAdvancing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [nextTopicError, setNextTopicError] = useState<string | null>(null);
@@ -41,16 +41,13 @@ export function TeachingPage() {
       return;
     }
     setIsAdvancing(true);
-    setStreamPreview("");
     setNextTopicError(null);
     try {
       for await (const event of apiClient.streamNextTopic({
         session_id: sessionId,
         completed_topic: currentTopic,
       })) {
-        if (event.event === "token") {
-          setStreamPreview((prev) => prev + event.data);
-        } else if (event.event === "done") {
+        if (event.event === "done") {
           markTopicComplete(currentTopic);
           if (isChapterCompleteResponse(event.data)) {
             setSession({ mode: "quiz", currentTopic: null, teachingOutput: null, topicsRemaining: [] });
@@ -70,7 +67,6 @@ export function TeachingPage() {
       setNextTopicError(error instanceof Error ? error.message : "Something went wrong.");
     } finally {
       setIsAdvancing(false);
-      setStreamPreview("");
     }
   };
 
@@ -79,16 +75,13 @@ export function TeachingPage() {
       return;
     }
     setIsRefreshing(true);
-    setStreamPreview("");
     setExplainError(null);
     try {
       for await (const event of apiClient.streamExplainDifferently({
         session_id: sessionId,
         hint: `Use a different example and a different phrasing for the topic "${currentTopic}".`,
       })) {
-        if (event.event === "token") {
-          setStreamPreview((prev) => prev + event.data);
-        } else if (event.event === "done") {
+        if (event.event === "done") {
           setSession({
             currentTopic: event.data.topic,
             topicsRemaining: event.data.next_topics,
@@ -103,7 +96,6 @@ export function TeachingPage() {
       setExplainError(error instanceof Error ? error.message : "Something went wrong.");
     } finally {
       setIsRefreshing(false);
-      setStreamPreview("");
     }
   };
 
@@ -142,8 +134,13 @@ export function TeachingPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-purple-700 dark:text-purple-300">
                   {isAdvancing ? "Teaching the next topic..." : "Rebuilding the explanation..."}
                 </p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-purple-950 dark:text-purple-100">
-                  {streamPreview || "Thinking..."}
+                <p className="mt-3 flex items-center gap-1.5 text-sm leading-6 text-purple-950 dark:text-purple-100">
+                  Thinking
+                  <span className="flex gap-0.5">
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+                  </span>
                 </p>
               </div>
             ) : null}
